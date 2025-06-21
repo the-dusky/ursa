@@ -34,8 +34,17 @@ export function PlayerInfo() {
                 <div>{player.resources.salmon}</div>
               </div>
             </div>
-            <div className="mt-2">
-              <div className="font-medium">Pieces: {player.pieces.length}</div>
+            <div className="mt-2 space-y-1">
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <div className="font-medium">🐻 Bears</div>
+                  <div>{player.pieceCount.bears}/{player.pieceCount.maxBears}</div>
+                </div>
+                <div>
+                  <div className="font-medium">🐼 Cubs</div>
+                  <div>{player.pieceCount.cubs}/{player.pieceCount.maxCubs}</div>
+                </div>
+              </div>
               <div className="font-medium">Score: {player.score}</div>
             </div>
           </CardContent>

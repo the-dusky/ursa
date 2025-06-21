@@ -1,7 +1,6 @@
 'use client'
 
 import { useGameStore, GameSpace as GameSpaceType } from '@/store/gameStore'
-import { cn } from '@/lib/utils'
 
 export function GameBoard() {
   const { spaces } = useGameStore()
@@ -142,10 +141,33 @@ interface GameSpaceSVGProps {
 }
 
 function GameSpaceSVG({ space, x, y, size }: GameSpaceSVGProps) {
-  const { selectSpace, selectedSpaceId } = useGameStore()
+  const { 
+    selectSpace, 
+    selectedSpaceId, 
+    selectedPieceId,
+    movePiece,
+    clearSelection,
+    addToLog,
+    currentPlayerIndex,
+    players
+  } = useGameStore()
+
+  const currentPlayer = players[currentPlayerIndex]
 
   const handleClick = () => {
-    selectSpace(space.id)
+    // If this space is highlighted and we have a selected piece, try to move
+    if (space.isHighlighted && selectedPieceId) {
+      const success = movePiece(selectedPieceId, space.id)
+      if (success) {
+        clearSelection()
+        addToLog(`${currentPlayer?.name} moved piece to ${space.quadrant}`)
+      } else {
+        addToLog('Move failed - invalid target')
+      }
+    } else {
+      // Normal selection behavior
+      selectSpace(space.id)
+    }
   }
 
   const getSpaceColor = () => {
@@ -176,15 +198,11 @@ function GameSpaceSVG({ space, x, y, size }: GameSpaceSVGProps) {
   const getPieceColor = () => {
     if (!space.piece) return ''
     
-    if (space.piece.type === 'bear') {
-      return '#92400e' // amber-700
-    }
-    
-    // Player pieces
+    // All pieces are now bears or cubs - color by player
     const player = space.piece.playerId
     if (player === 1) return '#dc2626' // red-600
     if (player === 2) return '#2563eb' // blue-600
-    return '#7c3aed' // purple-600
+    return '#7c3aed' // purple-600 (fallback)
   }
 
   const getIndicator = () => {
@@ -219,6 +237,8 @@ function GameSpaceSVG({ space, x, y, size }: GameSpaceSVGProps) {
           fill={getPieceColor()}
           stroke="#1f2937"
           strokeWidth="1"
+          className="cursor-pointer"
+          onClick={handleClick}
         />
       )}
 
@@ -232,7 +252,7 @@ function GameSpaceSVG({ space, x, y, size }: GameSpaceSVGProps) {
         fontSize={size * 0.6}
       >
         {space.piece 
-          ? (space.piece.type === 'bear' ? '🐻' : space.piece.playerId)
+          ? (space.piece.type === 'bear' ? '🐻' : '🐼')  // Adult bear vs cub
           : (!space.piece && getIndicator() ? getIndicator() : '')
         }
       </text>

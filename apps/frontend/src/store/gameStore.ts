@@ -21,8 +21,7 @@ export interface GamePiece {
   id: string
   playerId: string | number
   spaceId: number
-  type: 'player' | 'bear'
-  isKing?: boolean
+  type: 'bear' | 'cub'
   health?: number
 }
 
@@ -36,6 +35,12 @@ export interface Player {
     salmon: number
   }
   pieces: GamePiece[]
+  pieceCount: {
+    bears: number
+    cubs: number
+    maxBears: number
+    maxCubs: number
+  }
   score: number
 }
 
@@ -67,7 +72,7 @@ export interface GameState {
   disconnectFromRoom: () => void
   
   // Synced actions (work in both single and multiplayer)
-  placePiece: (playerId: string | number, spaceId: number) => boolean
+  placePiece: (playerId: string | number, spaceId: number, pieceType?: 'bear' | 'cub') => boolean
   movePiece: (pieceId: string, newSpaceId: number) => boolean
   advanceSeason: () => void
   nextPlayer: () => void
@@ -75,6 +80,7 @@ export interface GameState {
   // Local actions (UI only)
   selectSpace: (spaceId: number) => void
   clearSelection: () => void
+  highlightValidMoves: (spaceId: number) => void
   addToLog: (message: string) => void
   toggleRules: () => void
   resetGame: () => void
@@ -83,12 +89,14 @@ export interface GameState {
   calculateScore: (playerId: string | number) => number
   getPlayerTerritories: (playerId: string | number) => number[]
   areSpacesAdjacent: (spaceId1: number, spaceId2: number) => boolean
+  produceResources: () => void
+  handleWinterSurvival: () => void
 }
 
 // Y.js integration
 let yjsDoc: Y.Doc | null = null
 let yjsProvider: WebsocketProvider | null = null
-let gameStateMap: Y.Map<any> | null = null
+let gameStateMap: Y.Map<unknown> | null = null
 
 const SEASONAL_PRODUCTION = {
   Spring: { grains: 2, berries: 1, salmon: 3 },
@@ -142,6 +150,7 @@ const createInitialPlayers = (): Player[] => [
     color: '#E74C3C',
     resources: { grains: 0, berries: 0, salmon: 0 },
     pieces: [],
+    pieceCount: { bears: 0, cubs: 0, maxBears: 5, maxCubs: 3 },
     score: 0
   },
   {
@@ -150,14 +159,7 @@ const createInitialPlayers = (): Player[] => [
     color: '#3498DB',
     resources: { grains: 0, berries: 0, salmon: 0 },
     pieces: [],
-    score: 0
-  },
-  {
-    id: 'bears',
-    name: 'Bears',
-    color: '#8B4513',
-    resources: { grains: 0, berries: 0, salmon: 0 },
-    pieces: [],
+    pieceCount: { bears: 0, cubs: 0, maxBears: 5, maxCubs: 3 },
     score: 0
   }
 ]
@@ -187,44 +189,33 @@ export const useGameStore = create<GameState>()(
         const newSpaces = createInitialSpaces()
         const newPlayers = createInitialPlayers()
         
-        // Place initial pieces (same logic as before)
-        const player1Spaces = [5, 25, 45]
-        const player2Spaces = [85, 105, 125]
-        const bearSpaces = [1, 61, 81]
+        // Each player starts with 1 adult bear
+        const player1StartSpace = 25  // Middle ring in Mountains
+        const player2StartSpace = 105 // Middle ring in Forests
         
-        player1Spaces.forEach((spaceId, index) => {
-          const piece: GamePiece = {
-            id: `p1-${index}`,
-            playerId: 1,
-            spaceId,
-            type: 'player'
-          }
-          newSpaces[spaceId].piece = piece
-          newPlayers[0].pieces.push(piece)
-        })
+        // Player 1's starting bear
+        const p1Bear: GamePiece = {
+          id: 'p1-bear-1',
+          playerId: 1,
+          spaceId: player1StartSpace,
+          type: 'bear',
+          health: 1
+        }
+        newSpaces[player1StartSpace].piece = p1Bear
+        newPlayers[0].pieces.push(p1Bear)
+        newPlayers[0].pieceCount.bears = 1
         
-        player2Spaces.forEach((spaceId, index) => {
-          const piece: GamePiece = {
-            id: `p2-${index}`,
-            playerId: 2,
-            spaceId,
-            type: 'player'
-          }
-          newSpaces[spaceId].piece = piece
-          newPlayers[1].pieces.push(piece)
-        })
-        
-        bearSpaces.forEach((spaceId, index) => {
-          const piece: GamePiece = {
-            id: `bear-${index}`,
-            playerId: 'bears',
-            spaceId,
-            type: 'bear',
-            health: 1
-          }
-          newSpaces[spaceId].piece = piece
-          newPlayers[2].pieces.push(piece)
-        })
+        // Player 2's starting bear
+        const p2Bear: GamePiece = {
+          id: 'p2-bear-1',
+          playerId: 2,
+          spaceId: player2StartSpace,
+          type: 'bear',
+          health: 1
+        }
+        newSpaces[player2StartSpace].piece = p2Bear
+        newPlayers[1].pieces.push(p2Bear)
+        newPlayers[1].pieceCount.bears = 1
 
         set({
           spaces: newSpaces,
@@ -361,7 +352,7 @@ export const useGameStore = create<GameState>()(
       },
 
       // Synced actions (work in both single and multiplayer)
-      placePiece: (playerId, spaceId) => {
+      placePiece: (playerId, spaceId, pieceType: 'bear' | 'cub' = 'bear') => {
         const state = get()
         const space = state.spaces.find(s => s.id === spaceId)
         const player = state.players.find(p => p.id === playerId)
@@ -370,11 +361,26 @@ export const useGameStore = create<GameState>()(
           return false
         }
 
+        // Check piece limits
+        const currentBears = player.pieceCount.bears
+        const currentCubs = player.pieceCount.cubs
+        
+        if (pieceType === 'bear' && currentBears >= player.pieceCount.maxBears) {
+          get().addToLog(`${player.name} has reached maximum bears (${player.pieceCount.maxBears})`)
+          return false
+        }
+        
+        if (pieceType === 'cub' && currentCubs >= player.pieceCount.maxCubs) {
+          get().addToLog(`${player.name} has reached maximum cubs (${player.pieceCount.maxCubs})`)
+          return false
+        }
+
         const piece: GamePiece = {
-          id: `${playerId}-${Date.now()}`,
+          id: `${playerId}-${pieceType}-${Date.now()}`,
           playerId,
           spaceId,
-          type: playerId === 'bears' ? 'bear' : 'player'
+          type: pieceType,
+          health: 1
         }
 
         set(state => ({
@@ -383,11 +389,18 @@ export const useGameStore = create<GameState>()(
             s.id === spaceId ? { ...s, piece } : s
           ),
           players: state.players.map(p =>
-            p.id === playerId ? { ...p, pieces: [...p.pieces, piece] } : p
+            p.id === playerId ? { 
+              ...p, 
+              pieces: [...p.pieces, piece],
+              pieceCount: {
+                ...p.pieceCount,
+                [pieceType === 'bear' ? 'bears' : 'cubs']: p.pieceCount[pieceType === 'bear' ? 'bears' : 'cubs'] + 1
+              }
+            } : p
           )
         }))
 
-        get().addToLog(`${player.name} placed piece on ${space.quadrant}`)
+        get().addToLog(`${player.name} placed ${pieceType} on ${space.quadrant}`)
         return true
       },
 
@@ -479,6 +492,33 @@ export const useGameStore = create<GameState>()(
         }))
       },
 
+      highlightValidMoves: (spaceId) => {
+        const state = get()
+        const selectedSpace = state.spaces.find(s => s.id === spaceId)
+        
+        if (!selectedSpace?.piece) return
+
+        // Find all adjacent empty spaces
+        const validMoves = state.spaces.filter(space => 
+          space.id !== spaceId && // not the same space
+          !space.piece && // empty space
+          get().areSpacesAdjacent(spaceId, space.id) // adjacent
+        )
+
+        const validMoveIds = validMoves.map(s => s.id)
+
+        set(state => ({
+          ...state,
+          highlightedSpaces: validMoveIds,
+          spaces: state.spaces.map(s => ({
+            ...s,
+            isHighlighted: validMoveIds.includes(s.id)
+          }))
+        }))
+
+        get().addToLog(`Highlighted ${validMoveIds.length} valid moves`)
+      },
+
       addToLog: (message) => {
         const timestamp = new Date().toLocaleTimeString()
         set(state => ({
@@ -564,7 +604,7 @@ export const useGameStore = create<GameState>()(
             if (player.id === 'bears') return player
 
             const territories = get().getPlayerTerritories(player.id)
-            let newResources = { ...player.resources }
+            const newResources = { ...player.resources }
 
             territories.forEach(territoryId => {
               const space = state.spaces.find(s => s.id === territoryId)

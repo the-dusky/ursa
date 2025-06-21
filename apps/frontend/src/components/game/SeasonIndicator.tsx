@@ -40,7 +40,7 @@ export function SeasonIndicator() {
 
       {/* Season Progress Dots */}
       <div className="flex gap-1">
-        {['Spring', 'Summer', 'Autumn', 'Winter'].map((s, index) => (
+        {['Spring', 'Summer', 'Autumn', 'Winter'].map((s) => (
           <motion.div
             key={s}
             className={`w-2 h-2 rounded-full transition-all duration-300 ${
