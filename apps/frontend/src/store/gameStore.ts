@@ -23,17 +23,17 @@ export interface GamePiece {
   spaceId: number
   type: 'bear' | 'cub'
   health?: number
+  resources: {
+    grains: number
+    berries: number
+    salmon: number
+  }
 }
 
 export interface Player {
   id: string | number
   name: string
   color: string
-  resources: {
-    grains: number
-    berries: number
-    salmon: number
-  }
   pieces: GamePiece[]
   pieceCount: {
     bears: number
@@ -74,6 +74,7 @@ export interface GameState {
   // Synced actions (work in both single and multiplayer)
   placePiece: (playerId: string | number, spaceId: number, pieceType?: 'bear' | 'cub') => boolean
   movePiece: (pieceId: string, newSpaceId: number) => boolean
+  exchangeResources: (fromPieceId: string, toPieceId: string, resourceType: 'grains' | 'berries' | 'salmon', amount: number) => boolean
   advanceSeason: () => void
   nextPlayer: () => void
   
@@ -148,7 +149,6 @@ const createInitialPlayers = (): Player[] => [
     id: 1,
     name: 'Player 1',
     color: '#E74C3C',
-    resources: { grains: 0, berries: 0, salmon: 0 },
     pieces: [],
     pieceCount: { bears: 0, cubs: 0, maxBears: 5, maxCubs: 3 },
     score: 0
@@ -157,7 +157,6 @@ const createInitialPlayers = (): Player[] => [
     id: 2, 
     name: 'Player 2',
     color: '#3498DB',
-    resources: { grains: 0, berries: 0, salmon: 0 },
     pieces: [],
     pieceCount: { bears: 0, cubs: 0, maxBears: 5, maxCubs: 3 },
     score: 0
@@ -199,7 +198,12 @@ export const useGameStore = create<GameState>()(
           playerId: 1,
           spaceId: player1StartSpace,
           type: 'bear',
-          health: 1
+          health: 1,
+          resources: {
+            grains: 0,
+            berries: 0,
+            salmon: 0
+          }
         }
         newSpaces[player1StartSpace].piece = p1Bear
         newPlayers[0].pieces.push(p1Bear)
@@ -211,7 +215,12 @@ export const useGameStore = create<GameState>()(
           playerId: 2,
           spaceId: player2StartSpace,
           type: 'bear',
-          health: 1
+          health: 1,
+          resources: {
+            grains: 0,
+            berries: 0,
+            salmon: 0
+          }
         }
         newSpaces[player2StartSpace].piece = p2Bear
         newPlayers[1].pieces.push(p2Bear)
@@ -380,7 +389,12 @@ export const useGameStore = create<GameState>()(
           playerId,
           spaceId,
           type: pieceType,
-          health: 1
+          health: 1,
+          resources: {
+            grains: 0,
+            berries: 0,
+            salmon: 0
+          }
         }
 
         set(state => ({
@@ -434,6 +448,90 @@ export const useGameStore = create<GameState>()(
         }))
 
         get().addToLog(`Moved piece from ${oldSpace.quadrant} to ${newSpace.quadrant}`)
+        return true
+      },
+
+      exchangeResources: (fromPieceId, toPieceId, resourceType, amount) => {
+        const state = get()
+        
+        // Find the pieces
+        const fromPiece = state.spaces.find(s => s.piece?.id === fromPieceId)?.piece
+        const toPiece = state.spaces.find(s => s.piece?.id === toPieceId)?.piece
+        
+        if (!fromPiece || !toPiece) {
+          get().addToLog('Cannot find pieces for resource exchange')
+          return false
+        }
+
+        // Check if pieces are adjacent
+        if (!get().areSpacesAdjacent(fromPiece.spaceId, toPiece.spaceId)) {
+          get().addToLog('Bears must be adjacent to exchange resources')
+          return false
+        }
+
+        // Check if fromPiece has enough resources
+        if (fromPiece.resources[resourceType] < amount) {
+          get().addToLog(`${resourceType}: Not enough resources to exchange`)
+          return false
+        }
+
+        // Perform the exchange
+        set(state => ({
+          ...state,
+          spaces: state.spaces.map(s => {
+            if (s.piece?.id === fromPieceId) {
+              return {
+                ...s,
+                piece: {
+                  ...s.piece,
+                  resources: {
+                    ...s.piece.resources,
+                    [resourceType]: s.piece.resources[resourceType] - amount
+                  }
+                }
+              }
+            }
+            if (s.piece?.id === toPieceId) {
+              return {
+                ...s,
+                piece: {
+                  ...s.piece,
+                  resources: {
+                    ...s.piece.resources,
+                    [resourceType]: s.piece.resources[resourceType] + amount
+                  }
+                }
+              }
+            }
+            return s
+          }),
+          players: state.players.map(p => ({
+            ...p,
+            pieces: p.pieces.map(piece => {
+              if (piece.id === fromPieceId) {
+                return {
+                  ...piece,
+                  resources: {
+                    ...piece.resources,
+                    [resourceType]: piece.resources[resourceType] - amount
+                  }
+                }
+              }
+              if (piece.id === toPieceId) {
+                return {
+                  ...piece,
+                  resources: {
+                    ...piece.resources,
+                    [resourceType]: piece.resources[resourceType] + amount
+                  }
+                }
+              }
+              return piece
+            })
+          }))
+        }))
+
+        get().addToLog(`Exchanged ${amount} ${resourceType} between bears`)
         return true
       },
 
@@ -562,10 +660,16 @@ export const useGameStore = create<GameState>()(
         const player = state.players.find(p => p.id === playerId)
         if (!player) return 0
 
+        const totalResources = player.pieces.reduce((total, piece) => ({
+          grains: total.grains + piece.resources.grains,
+          berries: total.berries + piece.resources.berries,
+          salmon: total.salmon + piece.resources.salmon
+        }), { grains: 0, berries: 0, salmon: 0 })
+        
         const resourceScore = 
-          player.resources.grains * 1 +
-          player.resources.berries * 2 +
-          player.resources.salmon * 3
+          totalResources.grains * 1 +
+          totalResources.berries * 2 +
+          totalResources.salmon * 3
 
         const territoryScore = get().getPlayerTerritories(playerId).length * 2
         return resourceScore + territoryScore
@@ -585,12 +689,23 @@ export const useGameStore = create<GameState>()(
         
         if (!space1 || !space2) return false
 
-        const sameRing = space1.ring === space2.ring
-        const sameSegment = space1.segment === space2.segment
         const ringDiff = Math.abs(space1.ring - space2.ring)
         const segmentDiff = Math.abs(space1.segment - space2.segment)
+        
+        // Handle wrap-around for segments (circular nature of the board)
+        const ring1Segments = [20, 25, 30, 35, 40][space1.ring]
+        const ring2Segments = [20, 25, 30, 35, 40][space2.ring]
+        const segmentDiffWrap1 = Math.min(segmentDiff, ring1Segments - segmentDiff)
+        const segmentDiffWrap2 = Math.min(segmentDiff, ring2Segments - segmentDiff)
+        const minSegmentDiff = Math.min(segmentDiffWrap1, segmentDiffWrap2)
 
-        return (sameRing && segmentDiff <= 1) || (sameSegment && ringDiff <= 1)
+        // Adjacent if:
+        // 1. Same ring, adjacent segments (including wrap-around)
+        // 2. Same segment, adjacent rings  
+        // 3. Adjacent ring AND adjacent segment (diagonal)
+        return (ringDiff === 0 && minSegmentDiff <= 1) || 
+               (space1.segment === space2.segment && ringDiff <= 1) ||
+               (ringDiff <= 1 && minSegmentDiff <= 1)
       },
 
       // Helper methods (same as before)
@@ -598,33 +713,60 @@ export const useGameStore = create<GameState>()(
         const state = get()
         const production = SEASONAL_PRODUCTION[state.season]
 
+        // Give resources to each bear based on their location
         set(state => ({
           ...state,
-          players: state.players.map(player => {
-            if (player.id === 'bears') return player
+          spaces: state.spaces.map(space => {
+            if (!space.piece || !space.canProduce) return space
 
-            const territories = get().getPlayerTerritories(player.id)
-            const newResources = { ...player.resources }
+            const newResources = { ...space.piece.resources }
+            
+            switch (space.quadrant) {
+              case 'Pastures':
+                newResources.grains += production.grains
+                break
+              case 'Forests':
+                newResources.berries += production.berries
+                break
+              case 'Riverlands':
+                newResources.salmon += production.salmon
+                break
+            }
 
-            territories.forEach(territoryId => {
-              const space = state.spaces.find(s => s.id === territoryId)
-              if (space?.canProduce) {
-                switch (space.quadrant) {
-                  case 'Pastures':
-                    newResources.grains += production.grains
-                    break
-                  case 'Forests':
-                    newResources.berries += production.berries
-                    break
-                  case 'Riverlands':
-                    newResources.salmon += production.salmon
-                    break
-                }
+            return {
+              ...space,
+              piece: {
+                ...space.piece,
+                resources: newResources
+              }
+            }
+          }),
+          players: state.players.map(player => ({
+            ...player,
+            pieces: player.pieces.map(piece => {
+              const space = state.spaces.find(s => s.id === piece.spaceId)
+              if (!space?.canProduce) return piece
+
+              const newResources = { ...piece.resources }
+              
+              switch (space.quadrant) {
+                case 'Pastures':
+                  newResources.grains += production.grains
+                  break
+                case 'Forests':
+                  newResources.berries += production.berries
+                  break
+                case 'Riverlands':
+                  newResources.salmon += production.salmon
+                  break
+              }
+
+              return {
+                ...piece,
+                resources: newResources
               }
             })
-
-            return { ...player, resources: newResources }
-          })
+          }))
         }))
       },
 

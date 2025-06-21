@@ -149,7 +149,8 @@ function GameSpaceSVG({ space, x, y, size }: GameSpaceSVGProps) {
     clearSelection,
     addToLog,
     currentPlayerIndex,
-    players
+    players,
+    highlightValidMoves
   } = useGameStore()
 
   const currentPlayer = players[currentPlayerIndex]
@@ -167,6 +168,11 @@ function GameSpaceSVG({ space, x, y, size }: GameSpaceSVGProps) {
     } else {
       // Normal selection behavior
       selectSpace(space.id)
+      
+      // If selecting a piece that belongs to current player, immediately highlight moves
+      if (space.piece && space.piece.playerId === currentPlayer?.id) {
+        highlightValidMoves(space.id)
+      }
     }
   }
 

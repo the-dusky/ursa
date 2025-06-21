@@ -60,64 +60,76 @@ export function ResourcePanel() {
                 </Badge>
               </div>
 
-              {/* Resources */}
+              {/* Resources - calculated from all bears */}
               <div className="space-y-2">
-                {/* Grains */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span>🌾</span>
-                    <span className="text-sm text-slate-300">Grains</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-mono text-slate-200">
-                      {player.resources.grains}
-                    </span>
-                    <div className="w-16">
-                      <Progress 
-                        value={(player.resources.grains / 20) * 100} 
-                        className="h-2"
-                      />
-                    </div>
-                  </div>
-                </div>
+                {(() => {
+                  const totalResources = player.pieces.reduce((total, piece) => ({
+                    grains: total.grains + piece.resources.grains,
+                    berries: total.berries + piece.resources.berries,
+                    salmon: total.salmon + piece.resources.salmon
+                  }), { grains: 0, berries: 0, salmon: 0 })
+                  
+                  return (
+                    <>
+                      {/* Grains */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span>🌾</span>
+                          <span className="text-sm text-slate-300">Grains</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-mono text-slate-200">
+                            {totalResources.grains}
+                          </span>
+                          <div className="w-16">
+                            <Progress 
+                              value={(totalResources.grains / 20) * 100} 
+                              className="h-2"
+                            />
+                          </div>
+                        </div>
+                      </div>
 
-                {/* Berries */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span>🫐</span>
-                    <span className="text-sm text-slate-300">Berries</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-mono text-slate-200">
-                      {player.resources.berries}
-                    </span>
-                    <div className="w-16">
-                      <Progress 
-                        value={(player.resources.berries / 15) * 100} 
-                        className="h-2"
-                      />
-                    </div>
-                  </div>
-                </div>
+                      {/* Berries */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span>🫐</span>
+                          <span className="text-sm text-slate-300">Berries</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-mono text-slate-200">
+                            {totalResources.berries}
+                          </span>
+                          <div className="w-16">
+                            <Progress 
+                              value={(totalResources.berries / 15) * 100} 
+                              className="h-2"
+                            />
+                          </div>
+                        </div>
+                      </div>
 
-                {/* Salmon */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span>🐟</span>
-                    <span className="text-sm text-slate-300">Salmon</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-mono text-slate-200">
-                      {player.resources.salmon}
-                    </span>
-                    <div className="w-16">
-                      <Progress 
-                        value={(player.resources.salmon / 25) * 100} 
-                        className="h-2"
-                      />
-                    </div>
-                  </div>
-                </div>
+                      {/* Salmon */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span>🐟</span>
+                          <span className="text-sm text-slate-300">Salmon</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-mono text-slate-200">
+                            {totalResources.salmon}
+                          </span>
+                          <div className="w-16">
+                            <Progress 
+                              value={(totalResources.salmon / 25) * 100} 
+                              className="h-2"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )
+                })()}
 
                 {/* Territory Count */}
                 <div className="flex items-center justify-between pt-1 border-t border-slate-600">

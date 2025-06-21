@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 
 export function PlayerInfo() {
-  const { players, currentPlayerIndex } = useGameStore()
+  const { players, currentPlayerIndex, spaces } = useGameStore()
 
   return (
     <div className="space-y-4">
@@ -20,20 +20,6 @@ export function PlayerInfo() {
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-3 gap-2 text-sm">
-              <div>
-                <div className="font-medium">Grains</div>
-                <div>{player.resources.grains}</div>
-              </div>
-              <div>
-                <div className="font-medium">Berries</div>
-                <div>{player.resources.berries}</div>
-              </div>
-              <div>
-                <div className="font-medium">Salmon</div>
-                <div>{player.resources.salmon}</div>
-              </div>
-            </div>
             <div className="mt-2 space-y-1">
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
@@ -46,6 +32,29 @@ export function PlayerInfo() {
                 </div>
               </div>
               <div className="font-medium">Score: {player.score}</div>
+            </div>
+            
+            {/* Show individual bear resources */}
+            <div className="mt-3">
+              <div className="font-medium text-sm mb-2">Bear Resources:</div>
+              <div className="space-y-1">
+                {player.pieces.map(piece => {
+                  const space = spaces.find(s => s.id === piece.spaceId)
+                  
+                  return (
+                    <div key={piece.id} className="text-xs bg-slate-100 p-2 rounded">
+                      <div className="font-medium">
+                        {piece.type === 'bear' ? '🐻' : '🐼'} {space?.quadrant}
+                      </div>
+                      <div className="grid grid-cols-3 gap-1 mt-1">
+                        <div>🌾 {piece.resources.grains}</div>
+                        <div>🫐 {piece.resources.berries}</div>
+                        <div>🐟 {piece.resources.salmon}</div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
             </div>
           </CardContent>
         </Card>
