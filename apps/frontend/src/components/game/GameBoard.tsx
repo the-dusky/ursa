@@ -3,13 +3,9 @@
 import { useGameStore, GameSpace as GameSpaceType } from '@/store/gameStore'
 
 export function GameBoard() {
-  const { spaces } = useGameStore()
+  const { board } = useGameStore()
 
-  // Group spaces by rings for rendering
-  const rings = [0, 1, 2, 3, 4]
-  const spacesByRing = rings.map(ring => 
-    spaces.filter(space => space.ring === ring)
-  )
+  // No longer needed - rendering all spaces directly
 
   // Use a fixed viewBox for consistent proportions, let CSS handle sizing
   const viewBoxSize = 800
@@ -91,27 +87,13 @@ export function GameBoard() {
           ⚔️ Hunting (Danger)
         </text>
 
-        {/* Game Spaces - now inside SVG for proper scaling */}
-        {spacesByRing.map((ringSpaces, ringIndex) =>
-          ringSpaces.map(space => {
-            const radius = ringRadii[ringIndex]
-            const angle = space.angle
-            // Round coordinates to avoid hydration mismatches
-            const x = Math.round((centerX + Math.cos(angle) * radius) * 100) / 100
-            const y = Math.round((centerY + Math.sin(angle) * radius) * 100) / 100
-            const size = getSpaceSize(ringIndex)
-            
-            return (
-              <GameSpaceSVG
-                key={space.id}
-                space={space}
-                x={x}
-                y={y}
-                size={size}
-              />
-            )
-          })
-        )}
+        {/* Game Spaces - trapezoid sectors */}
+        {Object.values(board.spaces).map(space => (
+          <GameSpaceSVG
+            key={space.id}
+            space={space}
+          />
+        ))}
       </svg>
 
       {/* Center logo/indicator */}
@@ -126,21 +108,12 @@ export function GameBoard() {
   )
 }
 
-function getSpaceSize(ringIndex: number): number {
-  // Smaller spaces for inner rings, larger for outer rings
-  // Responsive sizing will be handled by SVG scaling
-  return 12 + ringIndex * 3
-}
-
-// SVG-based GameSpace component for proper scaling
+// SVG-based GameSpace component for trapezoid sectors
 interface GameSpaceSVGProps {
   space: GameSpaceType
-  x: number
-  y: number
-  size: number
 }
 
-function GameSpaceSVG({ space, x, y, size }: GameSpaceSVGProps) {
+function GameSpaceSVG({ space }: GameSpaceSVGProps) {
   const { 
     selectSpace, 
     selectedSpaceId, 
@@ -150,12 +123,17 @@ function GameSpaceSVG({ space, x, y, size }: GameSpaceSVGProps) {
     addToLog,
     currentPlayerIndex,
     players,
-    highlightValidMoves
+    highlightValidMoves,
+    board,
+    hoveredSpaceId,
+    setHoveredSpace,
+    areSpacesAdjacent
   } = useGameStore()
 
   const currentPlayer = players[currentPlayerIndex]
 
   const handleClick = () => {
+    console.log("clicked " + space.id)
     // If this space is highlighted and we have a selected piece, try to move
     if (space.isHighlighted && selectedPieceId) {
       const success = movePiece(selectedPieceId, space.id)
@@ -171,10 +149,70 @@ function GameSpaceSVG({ space, x, y, size }: GameSpaceSVGProps) {
       
       // If selecting a piece that belongs to current player, immediately highlight moves
       if (space.piece && space.piece.playerId === currentPlayer?.id) {
+        console.log("highlighted moves")
         highlightValidMoves(space.id)
       }
     }
   }
+
+  // Calculate trapezoid sector path
+  const createTrapezoidPath = () => {
+    const centerX = 400 // viewBox center
+    const centerY = 400 // viewBox center
+    const ringConfig = board.rings[space.ring]
+    const spaceCount = ringConfig.spaceCount
+    const anglePerSpace = (2 * Math.PI) / spaceCount
+    const startAngle = space.angle - anglePerSpace / 2
+    const endAngle = space.angle + anglePerSpace / 2
+    
+    // Ring radii
+    const ringRadii = [0, 120, 180, 240, 300, 360] // index 0 unused, rings 1-5
+    const innerRadius = space.ring === 1 ? 60 : ringRadii[space.ring - 1]
+    const outerRadius = ringRadii[space.ring]
+    
+    // Calculate the four corners of the trapezoid
+    const innerStart = {
+      x: centerX + Math.cos(startAngle) * innerRadius,
+      y: centerY + Math.sin(startAngle) * innerRadius
+    }
+    const innerEnd = {
+      x: centerX + Math.cos(endAngle) * innerRadius,
+      y: centerY + Math.sin(endAngle) * innerRadius
+    }
+    const outerEnd = {
+      x: centerX + Math.cos(endAngle) * outerRadius,
+      y: centerY + Math.sin(endAngle) * outerRadius
+    }
+    const outerStart = {
+      x: centerX + Math.cos(startAngle) * outerRadius,
+      y: centerY + Math.sin(startAngle) * outerRadius
+    }
+    
+    // Create path for trapezoid sector
+    return `M ${innerStart.x} ${innerStart.y} 
+            L ${outerStart.x} ${outerStart.y} 
+            A ${outerRadius} ${outerRadius} 0 0 1 ${outerEnd.x} ${outerEnd.y}
+            L ${innerEnd.x} ${innerEnd.y} 
+            A ${innerRadius} ${innerRadius} 0 0 0 ${innerStart.x} ${innerStart.y} 
+            Z`
+  }
+
+  // Calculate center point for text and pieces
+  const getCenterPoint = () => {
+    const centerX = 400
+    const centerY = 400
+    const ringRadii = [0, 120, 180, 240, 300, 360]
+    const innerRadius = space.ring === 1 ? 60 : ringRadii[space.ring - 1]
+    const outerRadius = ringRadii[space.ring]
+    const midRadius = (innerRadius + outerRadius) / 2
+    
+    return {
+      x: centerX + Math.cos(space.angle) * midRadius,
+      y: centerY + Math.sin(space.angle) * midRadius
+    }
+  }
+
+  const centerPoint = getCenterPoint()
 
   const getSpaceColor = () => {
     if (space.isSelected || selectedSpaceId === space.id) {
@@ -183,6 +221,11 @@ function GameSpaceSVG({ space, x, y, size }: GameSpaceSVGProps) {
     
     if (space.isHighlighted) {
       return '#10b981' // green-500
+    }
+
+    // Show adjacent spaces in light blue when hovering
+    if (hoveredSpaceId && areSpacesAdjacent(hoveredSpaceId, space.id)) {
+      return '#93c5fd' // blue-300
     }
 
     switch (space.quadrant) {
@@ -222,27 +265,27 @@ function GameSpaceSVG({ space, x, y, size }: GameSpaceSVGProps) {
 
   return (
     <g>
-      {/* Space Background */}
-      <circle
-        cx={x}
-        cy={y}
-        r={size}
+      {/* Trapezoid Space Background */}
+      <path
+        d={createTrapezoidPath()}
         fill={getSpaceColor()}
         stroke={space.isSelected || selectedSpaceId === space.id ? '#fbbf24' : '#374151'}
         strokeWidth={space.isSelected || selectedSpaceId === space.id ? 3 : 1}
         className="cursor-pointer hover:stroke-white transition-all duration-200"
         onClick={handleClick}
+        onMouseEnter={() => setHoveredSpace(space.id)}
+        onMouseLeave={() => setHoveredSpace(null)}
       />
 
       {/* Game Piece */}
       {space.piece && (
         <circle
-          cx={x}
-          cy={y}
-          r={size * 0.7}
+          cx={centerPoint.x}
+          cy={centerPoint.y}
+          r={20}
           fill={getPieceColor()}
           stroke="#1f2937"
-          strokeWidth="1"
+          strokeWidth="2"
           className="cursor-pointer"
           onClick={handleClick}
         />
@@ -250,12 +293,11 @@ function GameSpaceSVG({ space, x, y, size }: GameSpaceSVGProps) {
 
       {/* Text content for pieces or indicators */}
       <text
-        x={x}
-        y={y}
+        x={centerPoint.x}
+        y={centerPoint.y}
         textAnchor="middle"
         dominantBaseline="central"
-        className="fill-white text-xs font-bold pointer-events-none select-none"
-        fontSize={size * 0.6}
+        className="fill-white text-sm font-bold pointer-events-none select-none"
       >
         {space.piece 
           ? (space.piece.type === 'bear' ? '🐻' : '🐼')  // Adult bear vs cub
@@ -263,29 +305,26 @@ function GameSpaceSVG({ space, x, y, size }: GameSpaceSVGProps) {
         }
       </text>
 
-      {/* Selection Ring */}
+      {/* Selection Highlight */}
       {(space.isSelected || selectedSpaceId === space.id) && (
-        <circle
-          cx={x}
-          cy={y}
-          r={size + 2}
+        <path
+          d={createTrapezoidPath()}
           fill="none"
           stroke="#fbbf24"
-          strokeWidth="2"
+          strokeWidth="4"
           className="animate-pulse"
         />
       )}
 
-      {/* Highlight Ring for Valid Moves */}
+      {/* Highlight for Valid Moves */}
       {space.isHighlighted && (
-        <circle
-          cx={x}
-          cy={y}
-          r={size + 2}
-          fill="none"
+        <path
+          d={createTrapezoidPath()}
+          fill="rgba(16, 185, 129, 0.3)"
           stroke="#10b981"
-          strokeWidth="2"
+          strokeWidth="3"
           className="animate-pulse"
+          onClick={handleClick}
         />
       )}
     </g>

@@ -15,6 +15,7 @@ export function GameSpace({ space, x, y, size }: GameSpaceProps) {
   const { selectSpace, selectedSpaceId } = useGameStore()
 
   const handleClick = () => {
+    console.log("clicked space " + space.id)
     selectSpace(space.id)
   }
 
@@ -135,7 +136,7 @@ export function GameSpace({ space, x, y, size }: GameSpaceProps) {
       {/* Debug Info (only in development) */}
       {process.env.NODE_ENV === 'development' && (
         <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 text-xs text-slate-500">
-          {space.ring}-{space.segment}
+          {space.ring}-{space.position}
         </div>
       )}
     </motion.div>

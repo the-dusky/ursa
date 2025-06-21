@@ -5,25 +5,42 @@ import { WebsocketProvider } from 'y-websocket'
 
 // Types (same as before)
 export interface GameSpace {
-  id: number
-  ring: number
-  segment: number
+  id: string // e.g., "R1-1", "R2-15", "R5-40"
+  ring: number // 1-5
+  position: number // 1-20 for ring 1, 1-25 for ring 2, etc.
   angle: number
   quadrant: 'Mountains' | 'Pastures' | 'Forests' | 'Riverlands'
   subArea?: 'Caves' | 'Hunting Grounds'
   piece: GamePiece | null
   canProduce: boolean
+  adjacentSpaces: string[] // Array of space IDs that are adjacent
   isSelected?: boolean
   isHighlighted?: boolean
+}
+
+export interface Board {
+  spaces: { [spaceId: string]: GameSpace }
+  rings: {
+    [ring: number]: {
+      spaceCount: number
+      radius: number
+    }
+  }
 }
 
 export interface GamePiece {
   id: string
   playerId: string | number
-  spaceId: number
+  spaceId: string // Now uses string space IDs like "R1-5"
   type: 'bear' | 'cub'
   health?: number
   resources: {
+    grains: number
+    berries: number
+    salmon: number
+    fat: number
+  }
+  stomach: {
     grains: number
     berries: number
     salmon: number
@@ -46,17 +63,19 @@ export interface Player {
 
 export interface GameState {
   // Game data
-  spaces: GameSpace[]
+  board: Board
   players: Player[]
   currentPlayerIndex: number
   season: 'Spring' | 'Summer' | 'Autumn' | 'Winter'
   turn: number
   gamePhase: 'setup' | 'playing' | 'ended'
+  turnPhase: 'eat' | 'movement' | 'harvest' | 'digestion'
   
   // UI state (local only - not synced)
-  selectedSpaceId: number | null
+  selectedSpaceId: string | null
   selectedPieceId: string | null
-  highlightedSpaces: number[]
+  highlightedSpaces: string[]
+  hoveredSpaceId: string | null
   showRules: boolean
   gameLog: string[]
   
@@ -72,24 +91,32 @@ export interface GameState {
   disconnectFromRoom: () => void
   
   // Synced actions (work in both single and multiplayer)
-  placePiece: (playerId: string | number, spaceId: number, pieceType?: 'bear' | 'cub') => boolean
-  movePiece: (pieceId: string, newSpaceId: number) => boolean
-  exchangeResources: (fromPieceId: string, toPieceId: string, resourceType: 'grains' | 'berries' | 'salmon', amount: number) => boolean
+  placePiece: (playerId: string | number, spaceId: string, pieceType?: 'bear' | 'cub') => boolean
+  movePiece: (pieceId: string, newSpaceId: string) => boolean
+  exchangeResources: (fromPieceId: string, toPieceId: string, resourceType: 'grains' | 'berries' | 'salmon' | 'fat', amount: number) => boolean
+  
+  // Turn phase actions
+  eatFood: (pieceId: string, resourceType: 'grains' | 'berries' | 'salmon', amount: number) => boolean
+  harvestResources: (pieceId: string) => boolean
+  digestFood: (pieceId: string) => boolean
+  nextTurnPhase: () => void
+  
   advanceSeason: () => void
   nextPlayer: () => void
   
   // Local actions (UI only)
-  selectSpace: (spaceId: number) => void
+  selectSpace: (spaceId: string) => void
   clearSelection: () => void
-  highlightValidMoves: (spaceId: number) => void
+  highlightValidMoves: (spaceId: string) => void
+  setHoveredSpace: (spaceId: string | null) => void
   addToLog: (message: string) => void
   toggleRules: () => void
   resetGame: () => void
   
   // Utility functions
   calculateScore: (playerId: string | number) => number
-  getPlayerTerritories: (playerId: string | number) => number[]
-  areSpacesAdjacent: (spaceId1: number, spaceId2: number) => boolean
+  getPlayerTerritories: (playerId: string | number) => string[]
+  areSpacesAdjacent: (spaceId1: string, spaceId2: string) => boolean
   produceResources: () => void
   handleWinterSurvival: () => void
 }
@@ -100,37 +127,162 @@ let yjsProvider: WebsocketProvider | null = null
 let gameStateMap: Y.Map<unknown> | null = null
 
 const SEASONAL_PRODUCTION = {
-  Spring: { grains: 2, berries: 1, salmon: 3 },
-  Summer: { grains: 3, berries: 3, salmon: 2 },
-  Autumn: { grains: 3, berries: 2, salmon: 1 },
-  Winter: { grains: 1, berries: 0, salmon: 1 }
+  Spring: { grains: 2, berries: 1, salmon: 3, fat: 1 },
+  Summer: { grains: 3, berries: 3, salmon: 2, fat: 2 },
+  Autumn: { grains: 3, berries: 2, salmon: 1, fat: 3 },
+  Winter: { grains: 1, berries: 0, salmon: 1, fat: 0 }
 }
 
-// Helper functions (same as before)
-const createInitialSpaces = (): GameSpace[] => {
-  const spaces: GameSpace[] = []
-  const rings = [20, 25, 30, 35, 40]
-  let spaceId = 0
+// Helper functions for board creation
+const createInitialBoard = (): Board => {
+  // Use space counts divisible by 4 for perfect quadrant alignment
+  const ringConfigs = [
+    { ring: 1, spaceCount: 20, radius: 120 },  // 5 spaces per quadrant
+    { ring: 2, spaceCount: 24, radius: 180 },  // 6 spaces per quadrant
+    { ring: 3, spaceCount: 28, radius: 240 },  // 7 spaces per quadrant
+    { ring: 4, spaceCount: 32, radius: 300 },  // 8 spaces per quadrant
+    { ring: 5, spaceCount: 36, radius: 360 }   // 9 spaces per quadrant
+  ]
 
-  rings.forEach((spaceCount, ring) => {
-    for (let segment = 0; segment < spaceCount; segment++) {
-      const angle = (segment / spaceCount) * 2 * Math.PI
+  const spaces: { [spaceId: string]: GameSpace } = {}
+  const rings: Board['rings'] = {}
+
+  // Create all spaces first
+  ringConfigs.forEach(({ ring, spaceCount, radius }) => {
+    rings[ring] = { spaceCount, radius }
+    
+    for (let position = 1; position <= spaceCount; position++) {
+      // Offset angle by half a space so boundaries fall between spaces
+      const angle = ((position - 0.5) / spaceCount) * 2 * Math.PI
       const quadrant = getQuadrantFromAngle(angle)
+      const spaceId = `R${ring}-${position}`
       
-      spaces.push({
-        id: spaceId++,
+      spaces[spaceId] = {
+        id: spaceId,
         ring,
-        segment,
+        position,
         angle,
         quadrant,
         subArea: quadrant === 'Mountains' ? getMountainSubArea(ring) : undefined,
         piece: null,
-        canProduce: quadrant !== 'Mountains'
-      })
+        canProduce: quadrant !== 'Mountains',
+        adjacentSpaces: [], // Will be calculated below
+        isSelected: false,
+        isHighlighted: false
+      }
     }
   })
 
-  return spaces
+  // Calculate adjacency for all spaces
+  Object.values(spaces).forEach(space => {
+    space.adjacentSpaces = calculateAdjacentSpaces(space, spaces, rings)
+  })
+
+  return { spaces, rings }
+}
+
+const calculateAdjacentSpaces = (
+  space: GameSpace, 
+  allSpaces: { [spaceId: string]: GameSpace },
+  rings: Board['rings']
+): string[] => {
+  const adjacent: string[] = []
+  const { ring, position } = space
+  const ringConfig = rings[ring]
+  
+  // Same ring - left and right neighbors (share side edges)
+  const leftPos = position === 1 ? ringConfig.spaceCount : position - 1
+  const rightPos = position === ringConfig.spaceCount ? 1 : position + 1
+  
+  adjacent.push(`R${ring}-${leftPos}`)
+  adjacent.push(`R${ring}-${rightPos}`)
+  
+  // Inner ring connections - spaces that share the inner radial edge
+  if (ring > 1) {
+    const innerRingConfig = rings[ring - 1]
+    const innerPositions = getCorrespondingPositions(position, ringConfig.spaceCount, innerRingConfig.spaceCount)
+    innerPositions.forEach(pos => {
+      const innerSpaceId = `R${ring - 1}-${pos}`
+      if (allSpaces[innerSpaceId]) {
+        adjacent.push(innerSpaceId)
+      }
+    })
+  }
+  
+  // Outer ring connections - spaces that share the outer radial edge
+  if (ring < 5) {
+    const outerRingConfig = rings[ring + 1]
+    const outerPositions = getCorrespondingPositions(position, ringConfig.spaceCount, outerRingConfig.spaceCount)
+    outerPositions.forEach(pos => {
+      const outerSpaceId = `R${ring + 1}-${pos}`
+      if (allSpaces[outerSpaceId]) {
+        adjacent.push(outerSpaceId)
+      }
+    })
+  }
+  
+  return [...new Set(adjacent)] // Remove duplicates
+}
+
+const getCorrespondingPositions = (position: number, fromRingSize: number, toRingSize: number): number[] => {
+  // Calculate the angular extent of each space in both rings
+  const fromAnglePerSpace = (2 * Math.PI) / fromRingSize
+  const toAnglePerSpace = (2 * Math.PI) / toRingSize
+  
+  // Find the angular boundaries of the current space (accounting for offset)
+  const spaceStartAngle = ((position - 1) - 0.5) * fromAnglePerSpace
+  const spaceEndAngle = ((position - 1) + 0.5) * fromAnglePerSpace
+  
+  // Find all spaces in the target ring that overlap with this angular range
+  const positions = []
+  
+  for (let targetPos = 1; targetPos <= toRingSize; targetPos++) {
+    const targetStartAngle = ((targetPos - 1) - 0.5) * toAnglePerSpace
+    const targetEndAngle = ((targetPos - 1) + 0.5) * toAnglePerSpace
+    
+    // Check if there's any overlap between the angular ranges
+    // Account for wraparound at 2π
+    const overlap = angularRangesOverlap(
+      spaceStartAngle, spaceEndAngle,
+      targetStartAngle, targetEndAngle
+    )
+    
+    if (overlap) {
+      positions.push(targetPos)
+    }
+  }
+  
+  return positions.length > 0 ? positions : [1] // Fallback to position 1 if no overlaps found
+}
+
+// Helper function to check if two angular ranges overlap (accounting for 2π wraparound)
+const angularRangesOverlap = (start1: number, end1: number, start2: number, end2: number): boolean => {
+  // Normalize angles to [0, 2π)
+  const normalize = (angle: number) => ((angle % (2 * Math.PI)) + (2 * Math.PI)) % (2 * Math.PI)
+  
+  const s1 = normalize(start1)
+  const e1 = normalize(end1)
+  const s2 = normalize(start2)
+  const e2 = normalize(end2)
+  
+  // Simple overlap check without recursion
+  // Handle wraparound by checking if either range spans across 0
+  const range1Wraps = s1 > e1
+  const range2Wraps = s2 > e2
+  
+  if (!range1Wraps && !range2Wraps) {
+    // Neither range wraps - simple overlap check
+    return !(e1 < s2 || e2 < s1)
+  } else if (range1Wraps && !range2Wraps) {
+    // Range 1 wraps, range 2 doesn't
+    return (s2 <= e1) || (s1 <= e2)
+  } else if (!range1Wraps && range2Wraps) {
+    // Range 2 wraps, range 1 doesn't
+    return (s1 <= e2) || (s2 <= e1)
+  } else {
+    // Both ranges wrap - they must overlap
+    return true
+  }
 }
 
 const getQuadrantFromAngle = (angle: number): GameSpace['quadrant'] => {
@@ -167,15 +319,17 @@ export const useGameStore = create<GameState>()(
   devtools(
     (set, get) => ({
       // Initial state
-      spaces: createInitialSpaces(),
+      board: createInitialBoard(),
       players: createInitialPlayers(),
       currentPlayerIndex: 0,
       season: 'Spring',
       turn: 0,
       gamePhase: 'setup',
+      turnPhase: 'eat',
       selectedSpaceId: null,
       selectedPieceId: null,
       highlightedSpaces: [],
+      hoveredSpaceId: null,
       showRules: false,
       gameLog: [],
       isMultiplayer: false,
@@ -185,12 +339,12 @@ export const useGameStore = create<GameState>()(
 
       // Initialize single player game
       initializeGame: () => {
-        const newSpaces = createInitialSpaces()
+        const newBoard = createInitialBoard()
         const newPlayers = createInitialPlayers()
         
-        // Each player starts with 1 adult bear
-        const player1StartSpace = 25  // Middle ring in Mountains
-        const player2StartSpace = 105 // Middle ring in Forests
+        // Each player starts with 1 adult bear at edge of mountains in pasture
+        const player1StartSpace = 'R3-7'   // Middle ring at Mountains/Pastures border
+        const player2StartSpace = 'R3-21'  // Middle ring at Mountains/Pastures border (opposite side)
         
         // Player 1's starting bear
         const p1Bear: GamePiece = {
@@ -202,10 +356,16 @@ export const useGameStore = create<GameState>()(
           resources: {
             grains: 0,
             berries: 0,
+            salmon: 0,
+            fat: 5
+          },
+          stomach: {
+            grains: 0,
+            berries: 0,
             salmon: 0
           }
         }
-        newSpaces[player1StartSpace].piece = p1Bear
+        newBoard.spaces[player1StartSpace].piece = p1Bear
         newPlayers[0].pieces.push(p1Bear)
         newPlayers[0].pieceCount.bears = 1
         
@@ -219,15 +379,21 @@ export const useGameStore = create<GameState>()(
           resources: {
             grains: 0,
             berries: 0,
+            salmon: 0,
+            fat: 5
+          },
+          stomach: {
+            grains: 0,
+            berries: 0,
             salmon: 0
           }
         }
-        newSpaces[player2StartSpace].piece = p2Bear
+        newBoard.spaces[player2StartSpace].piece = p2Bear
         newPlayers[1].pieces.push(p2Bear)
         newPlayers[1].pieceCount.bears = 1
 
         set({
-          spaces: newSpaces,
+          board: newBoard,
           players: newPlayers,
           gamePhase: 'playing',
           gameLog: ['Game initialized with pieces placed!'],
@@ -268,7 +434,7 @@ export const useGameStore = create<GameState>()(
               isUpdatingFromYjs = true;
 
               set({
-                spaces: yjsState.spaces || get().spaces,
+                board: yjsState.board || get().board,
                 players: yjsState.players || get().players,
                 currentPlayerIndex: yjsState.currentPlayerIndex || 0,
                 season: yjsState.season || 'Spring',
@@ -293,7 +459,7 @@ export const useGameStore = create<GameState>()(
 
               // avoid resending if nothing changed
               if (
-                JSON.stringify(prev.spaces) === JSON.stringify(state.spaces) &&
+                JSON.stringify(prev.board) === JSON.stringify(state.board) &&
                 JSON.stringify(prev.players) === JSON.stringify(state.players) &&
                 prev.currentPlayerIndex === state.currentPlayerIndex &&
                 prev.season === state.season &&
@@ -305,7 +471,7 @@ export const useGameStore = create<GameState>()(
 
               isUpdatingFromYjs = true
 
-              gameStateMap!.set('spaces', state.spaces)
+              gameStateMap!.set('board', state.board)
               gameStateMap!.set('players', state.players)
               gameStateMap!.set('currentPlayerIndex', state.currentPlayerIndex)
               gameStateMap!.set('season', state.season)
@@ -363,7 +529,7 @@ export const useGameStore = create<GameState>()(
       // Synced actions (work in both single and multiplayer)
       placePiece: (playerId, spaceId, pieceType: 'bear' | 'cub' = 'bear') => {
         const state = get()
-        const space = state.spaces.find(s => s.id === spaceId)
+        const space = state.board.spaces[spaceId]
         const player = state.players.find(p => p.id === playerId)
 
         if (!space || !player || space.piece) {
@@ -391,17 +557,27 @@ export const useGameStore = create<GameState>()(
           type: pieceType,
           health: 1,
           resources: {
-            grains: 0,
-            berries: 0,
-            salmon: 0
+            grains: 2,
+            berries: 2,
+            salmon: 2,
+            fat: 3
+          },
+          stomach: {
+            grains: 1,
+            berries: 1,
+            salmon: 1
           }
         }
 
         set(state => ({
           ...state,
-          spaces: state.spaces.map(s => 
-            s.id === spaceId ? { ...s, piece } : s
-          ),
+          board: {
+            ...state.board,
+            spaces: {
+              ...state.board.spaces,
+              [spaceId]: { ...state.board.spaces[spaceId], piece }
+            }
+          },
           players: state.players.map(p =>
             p.id === playerId ? { 
               ...p, 
@@ -421,8 +597,8 @@ export const useGameStore = create<GameState>()(
       movePiece: (pieceId, newSpaceId) => {
         const state = get()
         const piece = state.players.flatMap(p => p.pieces).find(p => p.id === pieceId)
-        const newSpace = state.spaces.find(s => s.id === newSpaceId)
-        const oldSpace = state.spaces.find(s => s.piece?.id === pieceId)
+        const newSpace = state.board.spaces[newSpaceId]
+        const oldSpace = Object.values(state.board.spaces).find(s => s.piece?.id === pieceId)
 
         if (!piece || !newSpace || !oldSpace || newSpace.piece) {
           return false
@@ -432,22 +608,67 @@ export const useGameStore = create<GameState>()(
           return false
         }
 
+        // Movement costs 1 energy (from stomach food or fat)
+        const currentPiece = oldSpace.piece!
+        const totalStomachFood = currentPiece.stomach.grains + currentPiece.stomach.berries + currentPiece.stomach.salmon
+        
+        let energySource = ''
+        const newResources = { ...currentPiece.resources }
+        const newStomach = { ...currentPiece.stomach }
+
+        if (totalStomachFood > 0) {
+          // Use stomach food first (prefer salmon > berries > grains)
+          if (currentPiece.stomach.salmon > 0) {
+            newStomach.salmon -= 1
+            energySource = 'salmon from stomach'
+          } else if (currentPiece.stomach.berries > 0) {
+            newStomach.berries -= 1
+            energySource = 'berries from stomach'
+          } else {
+            newStomach.grains -= 1
+            energySource = 'grains from stomach'
+          }
+        } else if (currentPiece.resources.fat > 0) {
+          // Use fat reserves
+          newResources.fat -= 1
+          energySource = 'fat reserves'
+        } else {
+          get().addToLog('Bear has no energy to move!')
+          return false
+        }
+
         set(state => ({
           ...state,
-          spaces: state.spaces.map(s => {
-            if (s.id === oldSpace.id) return { ...s, piece: null }
-            if (s.id === newSpaceId) return { ...s, piece: { ...piece, spaceId: newSpaceId } }
-            return s
-          }),
+          board: {
+            ...state.board,
+            spaces: {
+              ...state.board.spaces,
+              [oldSpace.id]: { ...state.board.spaces[oldSpace.id], piece: null },
+              [newSpaceId]: { 
+                ...state.board.spaces[newSpaceId], 
+                piece: { 
+                  ...piece, 
+                  spaceId: newSpaceId,
+                  resources: newResources,
+                  stomach: newStomach
+                } 
+              }
+            }
+          },
           players: state.players.map(p => ({
             ...p,
             pieces: p.pieces.map(piece => 
-              piece.id === pieceId ? { ...piece, spaceId: newSpaceId } : piece
+              piece.id === pieceId ? { 
+                ...piece, 
+                spaceId: newSpaceId,
+                resources: newResources,
+                stomach: newStomach
+              } : piece
             )
           }))
         }))
 
-        get().addToLog(`Moved piece from ${oldSpace.quadrant} to ${newSpace.quadrant}`)
+        get().addToLog(`Moved piece from ${oldSpace.quadrant} to ${newSpace.quadrant} using ${energySource}`)
         return true
       },
 
@@ -455,8 +676,8 @@ export const useGameStore = create<GameState>()(
         const state = get()
         
         // Find the pieces
-        const fromPiece = state.spaces.find(s => s.piece?.id === fromPieceId)?.piece
-        const toPiece = state.spaces.find(s => s.piece?.id === toPieceId)?.piece
+        const fromPiece = Object.values(state.board.spaces).find(s => s.piece?.id === fromPieceId)?.piece
+        const toPiece = Object.values(state.board.spaces).find(s => s.piece?.id === toPieceId)?.piece
         
         if (!fromPiece || !toPiece) {
           get().addToLog('Cannot find pieces for resource exchange')
@@ -476,35 +697,41 @@ export const useGameStore = create<GameState>()(
         }
 
         // Perform the exchange
+        const updatedSpaces = { ...state.board.spaces }
+        
+        Object.values(state.board.spaces).forEach(s => {
+          if (s.piece?.id === fromPieceId) {
+            updatedSpaces[s.id] = {
+              ...s,
+              piece: {
+                ...s.piece,
+                resources: {
+                  ...s.piece.resources,
+                  [resourceType]: s.piece.resources[resourceType] - amount
+                }
+              }
+            }
+          }
+          if (s.piece?.id === toPieceId) {
+            updatedSpaces[s.id] = {
+              ...s,
+              piece: {
+                ...s.piece,
+                resources: {
+                  ...s.piece.resources,
+                  [resourceType]: s.piece.resources[resourceType] + amount
+                }
+              }
+            }
+          }
+        })
+        
         set(state => ({
           ...state,
-          spaces: state.spaces.map(s => {
-            if (s.piece?.id === fromPieceId) {
-              return {
-                ...s,
-                piece: {
-                  ...s.piece,
-                  resources: {
-                    ...s.piece.resources,
-                    [resourceType]: s.piece.resources[resourceType] - amount
-                  }
-                }
-              }
-            }
-            if (s.piece?.id === toPieceId) {
-              return {
-                ...s,
-                piece: {
-                  ...s.piece,
-                  resources: {
-                    ...s.piece.resources,
-                    [resourceType]: s.piece.resources[resourceType] + amount
-                  }
-                }
-              }
-            }
-            return s
-          }),
+          board: {
+            ...state.board,
+            spaces: updatedSpaces
+          },
           players: state.players.map(p => ({
             ...p,
             pieces: p.pieces.map(piece => {
@@ -533,6 +760,244 @@ export const useGameStore = create<GameState>()(
 
         get().addToLog(`Exchanged ${amount} ${resourceType} between bears`)
         return true
+      },
+
+      // Turn phase functions
+      eatFood: (pieceId, resourceType, amount) => {
+        const state = get()
+        
+        // Find the piece
+        const pieceSpace = Object.values(state.board.spaces).find(s => s.piece?.id === pieceId)
+        if (!pieceSpace?.piece) {
+          get().addToLog('Cannot find bear for eating')
+          return false
+        }
+
+        // Check if bear has enough resources
+        if (pieceSpace.piece.resources[resourceType] < amount) {
+          get().addToLog(`Not enough ${resourceType} to eat`)
+          return false
+        }
+
+        // Move resources from storage to stomach
+        const updatedSpaces = { ...state.board.spaces }
+        
+        Object.values(state.board.spaces).forEach(s => {
+          if (s.piece?.id === pieceId) {
+            updatedSpaces[s.id] = {
+              ...s,
+              piece: {
+                ...s.piece,
+                resources: {
+                  ...s.piece.resources,
+                  [resourceType]: s.piece.resources[resourceType] - amount
+                },
+                stomach: {
+                  ...s.piece.stomach,
+                  [resourceType]: s.piece.stomach[resourceType] + amount
+                }
+              }
+            }
+          }
+        })
+        
+        set(state => ({
+          ...state,
+          board: {
+            ...state.board,
+            spaces: updatedSpaces
+          },
+          players: state.players.map(p => ({
+            ...p,
+            pieces: p.pieces.map(piece => {
+              if (piece.id === pieceId) {
+                return {
+                  ...piece,
+                  resources: {
+                    ...piece.resources,
+                    [resourceType]: piece.resources[resourceType] - amount
+                  },
+                  stomach: {
+                    ...piece.stomach,
+                    [resourceType]: piece.stomach[resourceType] + amount
+                  }
+                }
+              }
+              return piece
+            })
+          }))
+        }))
+
+        get().addToLog(`Bear ate ${amount} ${resourceType}`)
+        return true
+      },
+
+      harvestResources: (pieceId) => {
+        const state = get()
+        const pieceSpace = Object.values(state.board.spaces).find(s => s.piece?.id === pieceId)
+        if (!pieceSpace?.piece || !pieceSpace.canProduce) {
+          get().addToLog('Cannot harvest from this location')
+          return false
+        }
+
+        const production = SEASONAL_PRODUCTION[state.season]
+        
+        const updatedSpaces = { ...state.board.spaces }
+        
+        Object.values(state.board.spaces).forEach(s => {
+          if (s.piece?.id === pieceId) {
+            const newResources = { ...s.piece.resources }
+            
+            switch (s.quadrant) {
+              case 'Pastures':
+                newResources.grains += production.grains
+                break
+              case 'Forests':
+                newResources.berries += production.berries
+                break
+              case 'Riverlands':
+                newResources.salmon += production.salmon
+                break
+            }
+
+            updatedSpaces[s.id] = {
+              ...s,
+              piece: {
+                ...s.piece,
+                resources: newResources
+              }
+            }
+          }
+        })
+        
+        set(state => ({
+          ...state,
+          board: {
+            ...state.board,
+            spaces: updatedSpaces
+          },
+          players: state.players.map(p => ({
+            ...p,
+            pieces: p.pieces.map(piece => {
+              if (piece.id === pieceId) {
+                const space = state.board.spaces[piece.spaceId]
+                const newResources = { ...piece.resources }
+                
+                if (space) {
+                  switch (space.quadrant) {
+                    case 'Pastures':
+                      newResources.grains += production.grains
+                      break
+                    case 'Forests':
+                      newResources.berries += production.berries
+                      break
+                    case 'Riverlands':
+                      newResources.salmon += production.salmon
+                      break
+                  }
+                }
+
+                return { ...piece, resources: newResources }
+              }
+              return piece
+            })
+          }))
+        }))
+
+        get().addToLog(`Bear harvested from ${pieceSpace.quadrant}`)
+        return true
+      },
+
+      digestFood: (pieceId) => {
+        const state = get()
+        const pieceSpace = Object.values(state.board.spaces).find(s => s.piece?.id === pieceId)
+        if (!pieceSpace?.piece) {
+          get().addToLog('Cannot find bear for digestion')
+          return false
+        }
+
+        const totalStomachFood = 
+          pieceSpace.piece.stomach.grains + 
+          pieceSpace.piece.stomach.berries + 
+          pieceSpace.piece.stomach.salmon
+
+        if (totalStomachFood === 0) {
+          get().addToLog('Bear has no food to digest')
+          return false
+        }
+
+        // Convert all stomach food to fat (1:1 ratio)
+        const updatedSpaces = { ...state.board.spaces }
+        
+        Object.values(state.board.spaces).forEach(s => {
+          if (s.piece?.id === pieceId) {
+            updatedSpaces[s.id] = {
+              ...s,
+              piece: {
+                ...s.piece,
+                resources: {
+                  ...s.piece.resources,
+                  fat: s.piece.resources.fat + totalStomachFood
+                },
+                stomach: {
+                  grains: 0,
+                  berries: 0,
+                  salmon: 0
+                }
+              }
+            }
+          }
+        })
+        
+        set(state => ({
+          ...state,
+          board: {
+            ...state.board,
+            spaces: updatedSpaces
+          },
+          players: state.players.map(p => ({
+            ...p,
+            pieces: p.pieces.map(piece => {
+              if (piece.id === pieceId) {
+                return {
+                  ...piece,
+                  resources: {
+                    ...piece.resources,
+                    fat: piece.resources.fat + totalStomachFood
+                  },
+                  stomach: {
+                    grains: 0,
+                    berries: 0,
+                    salmon: 0
+                  }
+                }
+              }
+              return piece
+            })
+          }))
+        }))
+
+        get().addToLog(`Bear digested ${totalStomachFood} food into fat`)
+        return true
+      },
+
+      nextTurnPhase: () => {
+        const state = get()
+        const phases: GameState['turnPhase'][] = ['eat', 'movement', 'harvest', 'digestion']
+        const currentIndex = phases.indexOf(state.turnPhase)
+        const nextPhase = phases[(currentIndex + 1) % phases.length]
+
+        set(state => ({
+          ...state,
+          turnPhase: nextPhase
+        }))
+
+        get().addToLog(`Turn phase: ${nextPhase}`)
+        
+        // If we completed a full cycle, advance to next player
+        if (nextPhase === 'eat') {
+          get().nextPlayer()
+        }
       },
 
       advanceSeason: () => {
@@ -565,53 +1030,77 @@ export const useGameStore = create<GameState>()(
 
       // Local actions (not synced in multiplayer)
       selectSpace: (spaceId) => {
+        const updatedSpaces = { ...get().board.spaces }
+        Object.keys(updatedSpaces).forEach(id => {
+          updatedSpaces[id] = {
+            ...updatedSpaces[id],
+            isSelected: id === spaceId
+          }
+        })
+        
         set(state => ({
           ...state,
           selectedSpaceId: spaceId,
-          selectedPieceId: state.spaces.find(s => s.id === spaceId)?.piece?.id || null,
-          spaces: state.spaces.map(s => ({
-            ...s,
-            isSelected: s.id === spaceId
-          }))
+          selectedPieceId: state.board.spaces[spaceId]?.piece?.id || null,
+          board: {
+            ...state.board,
+            spaces: updatedSpaces
+          }
         }))
       },
 
       clearSelection: () => {
+        const updatedSpaces = { ...get().board.spaces }
+        Object.keys(updatedSpaces).forEach(id => {
+          updatedSpaces[id] = {
+            ...updatedSpaces[id],
+            isSelected: false,
+            isHighlighted: false
+          }
+        })
+        
         set(state => ({
           ...state,
           selectedSpaceId: null,
           selectedPieceId: null,
           highlightedSpaces: [],
-          spaces: state.spaces.map(s => ({
-            ...s,
-            isSelected: false,
-            isHighlighted: false
-          }))
+          board: {
+            ...state.board,
+            spaces: updatedSpaces
+          }
         }))
       },
 
       highlightValidMoves: (spaceId) => {
         const state = get()
-        const selectedSpace = state.spaces.find(s => s.id === spaceId)
+        const selectedSpace = state.board.spaces[spaceId]
         
         if (!selectedSpace?.piece) return
 
         // Find all adjacent empty spaces
-        const validMoves = state.spaces.filter(space => 
+        const validMoves = Object.values(state.board.spaces).filter(space => 
           space.id !== spaceId && // not the same space
           !space.piece && // empty space
           get().areSpacesAdjacent(spaceId, space.id) // adjacent
         )
 
         const validMoveIds = validMoves.map(s => s.id)
+        
+        const updatedSpaces = { ...state.board.spaces }
+        Object.keys(updatedSpaces).forEach(id => {
+          updatedSpaces[id] = {
+            ...updatedSpaces[id],
+            isHighlighted: validMoveIds.includes(id)
+          }
+        })
 
         set(state => ({
           ...state,
           highlightedSpaces: validMoveIds,
-          spaces: state.spaces.map(s => ({
-            ...s,
-            isHighlighted: validMoveIds.includes(s.id)
-          }))
+          board: {
+            ...state.board,
+            spaces: updatedSpaces
+          }
         }))
 
         get().addToLog(`Highlighted ${validMoveIds.length} valid moves`)
@@ -622,6 +1111,13 @@ export const useGameStore = create<GameState>()(
         set(state => ({
           ...state,
           gameLog: [...state.gameLog, `[${timestamp}] ${message}`].slice(-20)
+        }))
+      },
+
+      setHoveredSpace: (spaceId) => {
+        set(state => ({
+          ...state,
+          hoveredSpaceId: spaceId
         }))
       },
 
@@ -636,7 +1132,7 @@ export const useGameStore = create<GameState>()(
         }
 
         set({
-          spaces: createInitialSpaces(),
+          board: createInitialBoard(),
           players: createInitialPlayers(),
           currentPlayerIndex: 0,
           season: 'Spring',
@@ -645,6 +1141,7 @@ export const useGameStore = create<GameState>()(
           selectedSpaceId: null,
           selectedPieceId: null,
           highlightedSpaces: [],
+          hoveredSpaceId: null,
           showRules: false,
           gameLog: [],
           isMultiplayer: false,
@@ -663,13 +1160,15 @@ export const useGameStore = create<GameState>()(
         const totalResources = player.pieces.reduce((total, piece) => ({
           grains: total.grains + piece.resources.grains,
           berries: total.berries + piece.resources.berries,
-          salmon: total.salmon + piece.resources.salmon
-        }), { grains: 0, berries: 0, salmon: 0 })
+          salmon: total.salmon + piece.resources.salmon,
+          fat: total.fat + piece.resources.fat
+        }), { grains: 0, berries: 0, salmon: 0, fat: 0 })
         
         const resourceScore = 
           totalResources.grains * 1 +
           totalResources.berries * 2 +
-          totalResources.salmon * 3
+          totalResources.salmon * 3 +
+          totalResources.fat * 4
 
         const territoryScore = get().getPlayerTerritories(playerId).length * 2
         return resourceScore + territoryScore
@@ -677,35 +1176,19 @@ export const useGameStore = create<GameState>()(
 
       getPlayerTerritories: (playerId) => {
         const state = get()
-        return state.spaces
+        return Object.values(state.board.spaces)
           .filter(space => space.piece?.playerId === playerId)
           .map(space => space.id)
       },
 
       areSpacesAdjacent: (spaceId1, spaceId2) => {
         const state = get()
-        const space1 = state.spaces.find(s => s.id === spaceId1)
-        const space2 = state.spaces.find(s => s.id === spaceId2)
+        const space1 = state.board.spaces[spaceId1]
         
-        if (!space1 || !space2) return false
-
-        const ringDiff = Math.abs(space1.ring - space2.ring)
-        const segmentDiff = Math.abs(space1.segment - space2.segment)
+        if (!space1) return false
         
-        // Handle wrap-around for segments (circular nature of the board)
-        const ring1Segments = [20, 25, 30, 35, 40][space1.ring]
-        const ring2Segments = [20, 25, 30, 35, 40][space2.ring]
-        const segmentDiffWrap1 = Math.min(segmentDiff, ring1Segments - segmentDiff)
-        const segmentDiffWrap2 = Math.min(segmentDiff, ring2Segments - segmentDiff)
-        const minSegmentDiff = Math.min(segmentDiffWrap1, segmentDiffWrap2)
-
-        // Adjacent if:
-        // 1. Same ring, adjacent segments (including wrap-around)
-        // 2. Same segment, adjacent rings  
-        // 3. Adjacent ring AND adjacent segment (diagonal)
-        return (ringDiff === 0 && minSegmentDiff <= 1) || 
-               (space1.segment === space2.segment && ringDiff <= 1) ||
-               (ringDiff <= 1 && minSegmentDiff <= 1)
+        // Use pre-calculated adjacency list
+        return space1.adjacentSpaces.includes(spaceId2)
       },
 
       // Helper methods (same as before)
@@ -714,37 +1197,46 @@ export const useGameStore = create<GameState>()(
         const production = SEASONAL_PRODUCTION[state.season]
 
         // Give resources to each bear based on their location
+        const updatedSpaces = { ...state.board.spaces }
+        
+        Object.values(state.board.spaces).forEach(space => {
+          if (!space.piece || !space.canProduce) return
+
+          const newResources = { ...space.piece.resources }
+          
+          switch (space.quadrant) {
+            case 'Pastures':
+              newResources.grains += production.grains
+              break
+            case 'Forests':
+              newResources.berries += production.berries
+              break
+            case 'Riverlands':
+              newResources.salmon += production.salmon
+              break
+          }
+          // All bears gain fat regardless of location (from eating food)
+          newResources.fat += production.fat
+
+          updatedSpaces[space.id] = {
+            ...space,
+            piece: {
+              ...space.piece,
+              resources: newResources
+            }
+          }
+        })
+        
         set(state => ({
           ...state,
-          spaces: state.spaces.map(space => {
-            if (!space.piece || !space.canProduce) return space
-
-            const newResources = { ...space.piece.resources }
-            
-            switch (space.quadrant) {
-              case 'Pastures':
-                newResources.grains += production.grains
-                break
-              case 'Forests':
-                newResources.berries += production.berries
-                break
-              case 'Riverlands':
-                newResources.salmon += production.salmon
-                break
-            }
-
-            return {
-              ...space,
-              piece: {
-                ...space.piece,
-                resources: newResources
-              }
-            }
-          }),
+          board: {
+            ...state.board,
+            spaces: updatedSpaces
+          },
           players: state.players.map(player => ({
             ...player,
             pieces: player.pieces.map(piece => {
-              const space = state.spaces.find(s => s.id === piece.spaceId)
+              const space = state.board.spaces[piece.spaceId]
               if (!space?.canProduce) return piece
 
               const newResources = { ...piece.resources }
@@ -760,6 +1252,8 @@ export const useGameStore = create<GameState>()(
                   newResources.salmon += production.salmon
                   break
               }
+              // All bears gain fat regardless of location (from eating food)
+              newResources.fat += production.fat
 
               return {
                 ...piece,
@@ -776,7 +1270,7 @@ export const useGameStore = create<GameState>()(
         if (!bearsPlayer) return
 
         const survivingBears = bearsPlayer.pieces.filter(bear => {
-          const space = state.spaces.find(s => s.id === bear.spaceId)
+          const space = state.board.spaces[bear.spaceId]
           if (space?.subArea === 'Caves') {
             get().addToLog('Bear survived winter in caves')
             return true
@@ -788,14 +1282,20 @@ export const useGameStore = create<GameState>()(
           return true
         })
 
+        const updatedSpaces = { ...state.board.spaces }
+        
+        Object.values(state.board.spaces).forEach(space => {
+          if (space.piece?.type === 'bear' && !survivingBears.find(b => b.id === space.piece?.id)) {
+            updatedSpaces[space.id] = { ...space, piece: null }
+          }
+        })
+        
         set(state => ({
           ...state,
-          spaces: state.spaces.map(space => {
-            if (space.piece?.type === 'bear' && !survivingBears.find(b => b.id === space.piece?.id)) {
-              return { ...space, piece: null }
-            }
-            return space
-          }),
+          board: {
+            ...state.board,
+            spaces: updatedSpaces
+          },
           players: state.players.map(player => 
             player.id === 'bears' ? { ...player, pieces: survivingBears } : player
           )

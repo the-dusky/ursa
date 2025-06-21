@@ -66,8 +66,9 @@ export function ResourcePanel() {
                   const totalResources = player.pieces.reduce((total, piece) => ({
                     grains: total.grains + piece.resources.grains,
                     berries: total.berries + piece.resources.berries,
-                    salmon: total.salmon + piece.resources.salmon
-                  }), { grains: 0, berries: 0, salmon: 0 })
+                    salmon: total.salmon + piece.resources.salmon,
+                    fat: total.fat + piece.resources.fat
+                  }), { grains: 0, berries: 0, salmon: 0, fat: 0 })
                   
                   return (
                     <>
@@ -122,6 +123,25 @@ export function ResourcePanel() {
                           <div className="w-16">
                             <Progress 
                               value={(totalResources.salmon / 25) * 100} 
+                              className="h-2"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Fat */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span>🥩</span>
+                          <span className="text-sm text-slate-300">Fat</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-mono text-slate-200">
+                            {totalResources.fat}
+                          </span>
+                          <div className="w-16">
+                            <Progress 
+                              value={(totalResources.fat / 30) * 100} 
                               className="h-2"
                             />
                           </div>

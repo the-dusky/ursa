@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 
 export function PlayerInfo() {
-  const { players, currentPlayerIndex, spaces } = useGameStore()
+  const { players, currentPlayerIndex, board } = useGameStore()
 
   return (
     <div className="space-y-4">
@@ -39,17 +39,18 @@ export function PlayerInfo() {
               <div className="font-medium text-sm mb-2">Bear Resources:</div>
               <div className="space-y-1">
                 {player.pieces.map(piece => {
-                  const space = spaces.find(s => s.id === piece.spaceId)
+                  const space = board.spaces[piece.spaceId]
                   
                   return (
                     <div key={piece.id} className="text-xs bg-slate-100 p-2 rounded">
                       <div className="font-medium">
                         {piece.type === 'bear' ? '🐻' : '🐼'} {space?.quadrant}
                       </div>
-                      <div className="grid grid-cols-3 gap-1 mt-1">
+                      <div className="grid grid-cols-4 gap-1 mt-1">
                         <div>🌾 {piece.resources.grains}</div>
                         <div>🫐 {piece.resources.berries}</div>
                         <div>🐟 {piece.resources.salmon}</div>
+                        <div>🥩 {piece.resources.fat}</div>
                       </div>
                     </div>
                   )

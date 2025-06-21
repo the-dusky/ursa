@@ -17,30 +17,32 @@ export function GameControls() {
     clearSelection,
     toggleRules,
     selectedSpaceId,
-    spaces,
+    board,
     highlightValidMoves,
     placePiece,
     addToLog
   } = useGameStore()
 
   const currentPlayer = players[currentPlayerIndex]
-  const selectedSpace = spaces.find(s => s.id === selectedSpaceId)
+  const selectedSpace = selectedSpaceId ? board.spaces[selectedSpaceId] : null
   const selectedPiece = selectedSpace?.piece
   const canMoveSelectedPiece = selectedPiece && selectedPiece.playerId === currentPlayer?.id
 
   const handleHighlightMoves = () => {
+    console.log("highlight moves")
     if (selectedSpaceId && canMoveSelectedPiece) {
       highlightValidMoves(selectedSpaceId)
     }
   }
 
   const handlePlaceBear = () => {
+    console.log("test")
     if (!selectedSpaceId || !currentPlayer) {
       addToLog('Select an empty space first')
       return
     }
 
-    const selectedSpace = spaces.find(s => s.id === selectedSpaceId)
+    const selectedSpace = selectedSpaceId ? board.spaces[selectedSpaceId] : null
     if (!selectedSpace || selectedSpace.piece) {
       addToLog('Space must be empty to place a piece')
       return
@@ -58,7 +60,7 @@ export function GameControls() {
       return
     }
 
-    const selectedSpace = spaces.find(s => s.id === selectedSpaceId)
+    const selectedSpace = selectedSpaceId ? board.spaces[selectedSpaceId] : null
     if (!selectedSpace || selectedSpace.piece) {
       addToLog('Space must be empty to place a piece')
       return
