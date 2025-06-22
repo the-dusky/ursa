@@ -17,7 +17,7 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
     turnPhase,
     setTurnPhase,
     harvestAllPlayerResources,
-    eatResourceToEnergy
+    eatFood
   } = useGameStore()
   
   const player = players.find(p => String(p.id) === playerId)
@@ -55,11 +55,11 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
   const handleEatResource = (pieceId: string, resourceType: 'grains' | 'berries' | 'salmon') => {
     if (!isCurrentPlayer || turnPhase !== 'eat') return
     
-    // Eat 1 unit of the resource and convert to energy
+    // Move 1 unit of the resource to the stomach
     const piece = player?.pieces.find(p => p.id === pieceId)
     if (!piece || piece.resources[resourceType] <= 0) return
     
-    eatResourceToEnergy(pieceId, resourceType, 1)
+    eatFood(pieceId, resourceType, 1)
   }
 
   return (
