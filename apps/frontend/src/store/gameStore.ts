@@ -99,6 +99,7 @@ export interface GameState {
   
   // Turn phase actions
   eatFood: (pieceId: string, resourceType: 'grains' | 'berries' | 'salmon', amount: number) => boolean
+  eatResourceToEnergy: (pieceId: string, resourceType: 'grains' | 'berries' | 'salmon', amount: number) => boolean
   convertFoodToEnergy: (pieceId: string) => boolean
   harvestResources: (pieceId: string) => boolean
   harvestAllPlayerResources: (playerId: string | number) => boolean
@@ -838,6 +839,73 @@ export const useGameStore = create<GameState>()(
         }))
 
         get().addToLog(`Bear ate ${amount} ${resourceType}`)
+        return true
+      },
+
+      eatResourceToEnergy: (pieceId, resourceType, amount) => {
+        const state = get()
+        
+        // Find the piece
+        const pieceSpace = Object.values(state.board.spaces).find(s => s.piece?.id === pieceId)
+        if (!pieceSpace?.piece) {
+          get().addToLog('Cannot find bear for eating')
+          return false
+        }
+
+        // Check if bear has enough resources
+        if (pieceSpace.piece.resources[resourceType] < amount) {
+          get().addToLog(`Not enough ${resourceType} to eat`)
+          return false
+        }
+
+        // Calculate energy gained based on resource type
+        const energyRates = { grains: 2, berries: 3, salmon: 5 }
+        const energyGained = amount * energyRates[resourceType]
+
+        // Update both board spaces and players array
+        const updatedSpaces = { ...state.board.spaces }
+        
+        Object.values(state.board.spaces).forEach(s => {
+          if (s.piece?.id === pieceId) {
+            updatedSpaces[s.id] = {
+              ...s,
+              piece: {
+                ...s.piece,
+                resources: {
+                  ...s.piece.resources,
+                  [resourceType]: s.piece.resources[resourceType] - amount
+                },
+                energy: s.piece.energy + energyGained
+              }
+            }
+          }
+        })
+        
+        set(state => ({
+          ...state,
+          board: {
+            ...state.board,
+            spaces: updatedSpaces
+          },
+          players: state.players.map(p => ({
+            ...p,
+            pieces: p.pieces.map(piece => {
+              if (piece.id === pieceId) {
+                return {
+                  ...piece,
+                  resources: {
+                    ...piece.resources,
+                    [resourceType]: piece.resources[resourceType] - amount
+                  },
+                  energy: piece.energy + energyGained
+                }
+              }
+              return piece
+            })
+          }))
+        }))
+
+        get().addToLog(`Bear ate ${amount} ${resourceType} and gained ${energyGained} energy`)
         return true
       },
 

@@ -16,7 +16,8 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
     nextPlayer,
     turnPhase,
     setTurnPhase,
-    harvestAllPlayerResources
+    harvestAllPlayerResources,
+    eatResourceToEnergy
   } = useGameStore()
   
   const player = players.find(p => String(p.id) === playerId)
@@ -49,6 +50,16 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
     } else {
       setTurnPhase(phase as 'eat' | 'movement' | 'harvest' | 'digestion')
     }
+  }
+
+  const handleEatResource = (pieceId: string, resourceType: 'grains' | 'berries' | 'salmon') => {
+    if (!isCurrentPlayer || turnPhase !== 'eat') return
+    
+    // Eat 1 unit of the resource and convert to energy
+    const piece = player?.pieces.find(p => p.id === pieceId)
+    if (!piece || piece.resources[resourceType] <= 0) return
+    
+    eatResourceToEnergy(pieceId, resourceType, 1)
   }
 
   return (
@@ -125,15 +136,36 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
                   <div className="grid grid-cols-2 gap-1 h-16">
                     {/* Left column - Resources */}
                     <div className="space-y-0.5">
-                      <div className="flex items-center justify-between">
+                      <div 
+                        className={`flex items-center justify-between ${
+                          isCurrentPlayer && turnPhase === 'eat' && !isEmpty && piece.resources.grains > 0
+                            ? 'cursor-pointer hover:bg-green-100 rounded px-1' 
+                            : ''
+                        }`}
+                        onClick={() => !isEmpty && piece && handleEatResource(piece.id, 'grains')}
+                      >
                         <span>🌾</span>
                         <span className="text-xs">{isEmpty ? 0 : piece.resources.grains}</span>
                       </div>
-                      <div className="flex items-center justify-between">
+                      <div 
+                        className={`flex items-center justify-between ${
+                          isCurrentPlayer && turnPhase === 'eat' && !isEmpty && piece.resources.berries > 0
+                            ? 'cursor-pointer hover:bg-blue-100 rounded px-1' 
+                            : ''
+                        }`}
+                        onClick={() => !isEmpty && piece && handleEatResource(piece.id, 'berries')}
+                      >
                         <span>🫐</span>
                         <span className="text-xs">{isEmpty ? 0 : piece.resources.berries}</span>
                       </div>
-                      <div className="flex items-center justify-between">
+                      <div 
+                        className={`flex items-center justify-between ${
+                          isCurrentPlayer && turnPhase === 'eat' && !isEmpty && piece.resources.salmon > 0
+                            ? 'cursor-pointer hover:bg-red-100 rounded px-1' 
+                            : ''
+                        }`}
+                        onClick={() => !isEmpty && piece && handleEatResource(piece.id, 'salmon')}
+                      >
                         <span>🐟</span>
                         <span className="text-xs">{isEmpty ? 0 : piece.resources.salmon}</span>
                       </div>
