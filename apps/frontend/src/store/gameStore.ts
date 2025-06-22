@@ -1151,11 +1151,10 @@ export const useGameStore = create<GameState>()(
           return false
         }
         
-        // Convert stomach food to energy using proper conversion rates
-        const energyRates = { grains: 2, berries: 3, salmon: 5 }
-        const energyGained = (piece.stomach.grains * energyRates.grains) + 
-                           (piece.stomach.berries * energyRates.berries) + 
-                           (piece.stomach.salmon * energyRates.salmon)
+        // Convert stomach food to energy using 2:1 ratio (2 food = 1 energy)
+        // Any unused food goes to energy storage
+        const energyGained = Math.floor(totalStomachFood / 2)
+        const leftoverFood = totalStomachFood % 2
         
         set(state => ({
           ...state,
@@ -1167,7 +1166,7 @@ export const useGameStore = create<GameState>()(
                 ...space,
                 piece: {
                   ...piece,
-                  energy: piece.energy + energyGained,
+                  energy: piece.energy + energyGained + leftoverFood,
                   stomach: {
                     grains: 0,
                     berries: 0,
@@ -1176,7 +1175,24 @@ export const useGameStore = create<GameState>()(
                 }
               }
             }
-          }
+          },
+          players: state.players.map(p => ({
+            ...p,
+            pieces: p.pieces.map(playerPiece => {
+              if (playerPiece.id === pieceId) {
+                return {
+                  ...playerPiece,
+                  energy: playerPiece.energy + energyGained + leftoverFood,
+                  stomach: {
+                    grains: 0,
+                    berries: 0,
+                    salmon: 0
+                  }
+                }
+              }
+              return playerPiece
+            })
+          }))
         }))
         
         const foodBreakdown = []
@@ -1184,7 +1200,12 @@ export const useGameStore = create<GameState>()(
         if (piece.stomach.berries > 0) foodBreakdown.push(`${piece.stomach.berries} 🫐`)
         if (piece.stomach.salmon > 0) foodBreakdown.push(`${piece.stomach.salmon} 🐟`)
         
-        get().addToLog(`Bear digested ${foodBreakdown.join(', ')} → ${energyGained} ⚡ energy`)
+        const totalEnergyGained = energyGained + leftoverFood
+        const conversionDetails = leftoverFood > 0 
+          ? `${energyGained} from pairs + ${leftoverFood} leftover = ${totalEnergyGained}` 
+          : energyGained.toString()
+        
+        get().addToLog(`Bear digested ${totalStomachFood} food (${foodBreakdown.join(', ')}) → ${conversionDetails} ⚡ energy`)
         return true
       },
 
