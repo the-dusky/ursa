@@ -96,13 +96,13 @@ export function GameBoard() {
         ))}
       </svg>
 
-      {/* Center logo/indicator */}
+      {/* Center sun indicator */}
       <div 
         className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 
-                   w-8 h-8 sm:w-12 sm:h-12 rounded-full bg-slate-700 border-2 border-slate-500 
+                   w-8 h-8 sm:w-12 sm:h-12 rounded-full bg-yellow-400 border-2 border-yellow-500 
                    flex items-center justify-center text-sm sm:text-xl"
       >
-        🎯
+        ☀️
       </div>
     </div>
   )

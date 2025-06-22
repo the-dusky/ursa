@@ -38,8 +38,8 @@ export interface GamePiece {
     grains: number
     berries: number
     salmon: number
-    fat: number
   }
+  energy: number
   stomach: {
     grains: number
     berries: number
@@ -67,6 +67,7 @@ export interface GameState {
   players: Player[]
   currentPlayerIndex: number
   season: 'Spring' | 'Summer' | 'Autumn' | 'Winter'
+  year: number
   turn: number
   gamePhase: 'setup' | 'playing' | 'ended'
   turnPhase: 'eat' | 'movement' | 'harvest' | 'digestion'
@@ -93,13 +94,17 @@ export interface GameState {
   // Synced actions (work in both single and multiplayer)
   placePiece: (playerId: string | number, spaceId: string, pieceType?: 'bear' | 'cub') => boolean
   movePiece: (pieceId: string, newSpaceId: string) => boolean
-  exchangeResources: (fromPieceId: string, toPieceId: string, resourceType: 'grains' | 'berries' | 'salmon' | 'fat', amount: number) => boolean
+  exchangeResources: (fromPieceId: string, toPieceId: string, resourceType: 'grains' | 'berries' | 'salmon', amount: number) => boolean
+  transferEnergy: (fromPieceId: string, toPieceId: string, amount: number) => boolean
   
   // Turn phase actions
   eatFood: (pieceId: string, resourceType: 'grains' | 'berries' | 'salmon', amount: number) => boolean
+  convertFoodToEnergy: (pieceId: string) => boolean
   harvestResources: (pieceId: string) => boolean
+  harvestAllPlayerResources: (playerId: string | number) => boolean
   digestFood: (pieceId: string) => boolean
   nextTurnPhase: () => void
+  setTurnPhase: (phase: 'eat' | 'movement' | 'harvest' | 'digestion') => void
   
   advanceSeason: () => void
   nextPlayer: () => void
@@ -127,10 +132,10 @@ let yjsProvider: WebsocketProvider | null = null
 let gameStateMap: Y.Map<unknown> | null = null
 
 const SEASONAL_PRODUCTION = {
-  Spring: { grains: 2, berries: 1, salmon: 3, fat: 1 },
-  Summer: { grains: 3, berries: 3, salmon: 2, fat: 2 },
-  Autumn: { grains: 3, berries: 2, salmon: 1, fat: 3 },
-  Winter: { grains: 1, berries: 0, salmon: 1, fat: 0 }
+  Spring: { grains: 2, berries: 1, salmon: 3, energy: 1 },
+  Summer: { grains: 3, berries: 3, salmon: 2, energy: 2 },
+  Autumn: { grains: 3, berries: 2, salmon: 1, energy: 3 },
+  Winter: { grains: 1, berries: 0, salmon: 1, energy: 0 }
 }
 
 // Helper functions for board creation
@@ -323,6 +328,7 @@ export const useGameStore = create<GameState>()(
       players: createInitialPlayers(),
       currentPlayerIndex: 0,
       season: 'Spring',
+      year: 1,
       turn: 0,
       gamePhase: 'setup',
       turnPhase: 'eat',
@@ -356,9 +362,9 @@ export const useGameStore = create<GameState>()(
           resources: {
             grains: 0,
             berries: 0,
-            salmon: 0,
-            fat: 5
+            salmon: 0
           },
+          energy: 5,
           stomach: {
             grains: 0,
             berries: 0,
@@ -379,9 +385,9 @@ export const useGameStore = create<GameState>()(
           resources: {
             grains: 0,
             berries: 0,
-            salmon: 0,
-            fat: 5
+            salmon: 0
           },
+          energy: 5,
           stomach: {
             grains: 0,
             berries: 0,
@@ -559,9 +565,9 @@ export const useGameStore = create<GameState>()(
           resources: {
             grains: 2,
             berries: 2,
-            salmon: 2,
-            fat: 3
+            salmon: 2
           },
+          energy: 3,
           stomach: {
             grains: 1,
             berries: 1,
@@ -615,6 +621,7 @@ export const useGameStore = create<GameState>()(
         let energySource = ''
         const newResources = { ...currentPiece.resources }
         const newStomach = { ...currentPiece.stomach }
+        let newEnergy = currentPiece.energy
 
         if (totalStomachFood > 0) {
           // Use stomach food first (prefer salmon > berries > grains)
@@ -628,10 +635,10 @@ export const useGameStore = create<GameState>()(
             newStomach.grains -= 1
             energySource = 'grains from stomach'
           }
-        } else if (currentPiece.resources.fat > 0) {
-          // Use fat reserves
-          newResources.fat -= 1
-          energySource = 'fat reserves'
+        } else if (currentPiece.energy > 0) {
+          // Use energy reserves
+          newEnergy -= 1
+          energySource = 'energy reserves'
         } else {
           get().addToLog('Bear has no energy to move!')
           return false
@@ -650,7 +657,8 @@ export const useGameStore = create<GameState>()(
                   ...piece, 
                   spaceId: newSpaceId,
                   resources: newResources,
-                  stomach: newStomach
+                  stomach: newStomach,
+                  energy: newEnergy
                 } 
               }
             }
@@ -662,7 +670,8 @@ export const useGameStore = create<GameState>()(
                 ...piece, 
                 spaceId: newSpaceId,
                 resources: newResources,
-                stomach: newStomach
+                stomach: newStomach,
+                energy: newEnergy
               } : piece
             )
           }))
@@ -908,6 +917,105 @@ export const useGameStore = create<GameState>()(
         return true
       },
 
+      harvestAllPlayerResources: (playerId) => {
+        const state = get()
+        const player = state.players.find(p => p.id === playerId)
+        if (!player) {
+          get().addToLog('Player not found')
+          return false
+        }
+
+        const production = SEASONAL_PRODUCTION[state.season]
+        const totalHarvested = { grains: 0, berries: 0, salmon: 0 }
+        let bearsHarvested = 0
+        
+        const updatedSpaces = { ...state.board.spaces }
+        
+        // Update spaces
+        Object.values(state.board.spaces).forEach(space => {
+          if (space.piece && space.piece.playerId === playerId && space.canProduce) {
+            const newResources = { ...space.piece.resources }
+            
+            switch (space.quadrant) {
+              case 'Pastures':
+                newResources.grains += production.grains
+                totalHarvested.grains += production.grains
+                break
+              case 'Forests':
+                newResources.berries += production.berries
+                totalHarvested.berries += production.berries
+                break
+              case 'Riverlands':
+                newResources.salmon += production.salmon
+                totalHarvested.salmon += production.salmon
+                break
+            }
+
+            updatedSpaces[space.id] = {
+              ...space,
+              piece: {
+                ...space.piece,
+                resources: newResources
+              }
+            }
+            bearsHarvested++
+          }
+        })
+        
+        // Update player pieces
+        const updatedPlayers = state.players.map(p => {
+          if (p.id === playerId) {
+            return {
+              ...p,
+              pieces: p.pieces.map(piece => {
+                const space = state.board.spaces[piece.spaceId]
+                if (space && space.canProduce) {
+                  const newResources = { ...piece.resources }
+                  
+                  switch (space.quadrant) {
+                    case 'Pastures':
+                      newResources.grains += production.grains
+                      break
+                    case 'Forests':
+                      newResources.berries += production.berries
+                      break
+                    case 'Riverlands':
+                      newResources.salmon += production.salmon
+                      break
+                  }
+
+                  return { ...piece, resources: newResources }
+                }
+                return piece
+              })
+            }
+          }
+          return p
+        })
+
+        set(state => ({
+          ...state,
+          board: {
+            ...state.board,
+            spaces: updatedSpaces
+          },
+          players: updatedPlayers
+        }))
+
+        if (bearsHarvested > 0) {
+          const harvestSummary = []
+          if (totalHarvested.grains > 0) harvestSummary.push(`${totalHarvested.grains} 🌾`)
+          if (totalHarvested.berries > 0) harvestSummary.push(`${totalHarvested.berries} 🫐`)
+          if (totalHarvested.salmon > 0) harvestSummary.push(`${totalHarvested.salmon} 🐟`)
+          
+          get().addToLog(`${bearsHarvested} bears harvested: ${harvestSummary.join(', ')}`)
+        } else {
+          get().addToLog('No bears in productive areas to harvest')
+        }
+        
+        return bearsHarvested > 0
+      },
+
       digestFood: (pieceId) => {
         const state = get()
         const pieceSpace = Object.values(state.board.spaces).find(s => s.piece?.id === pieceId)
@@ -935,10 +1043,8 @@ export const useGameStore = create<GameState>()(
               ...s,
               piece: {
                 ...s.piece,
-                resources: {
-                  ...s.piece.resources,
-                  fat: s.piece.resources.fat + totalStomachFood
-                },
+                resources: s.piece.resources,
+                energy: s.piece.energy + totalStomachFood,
                 stomach: {
                   grains: 0,
                   berries: 0,
@@ -961,10 +1067,8 @@ export const useGameStore = create<GameState>()(
               if (piece.id === pieceId) {
                 return {
                   ...piece,
-                  resources: {
-                    ...piece.resources,
-                    fat: piece.resources.fat + totalStomachFood
-                  },
+                  resources: piece.resources,
+                  energy: piece.energy + totalStomachFood,
                   stomach: {
                     grains: 0,
                     berries: 0,
@@ -977,7 +1081,102 @@ export const useGameStore = create<GameState>()(
           }))
         }))
 
-        get().addToLog(`Bear digested ${totalStomachFood} food into fat`)
+        get().addToLog(`Bear digested ${totalStomachFood} food into energy`)
+        return true
+      },
+
+      transferEnergy: (fromPieceId: string, toPieceId: string, amount: number) => {
+        const state = get()
+        const fromSpace = Object.values(state.board.spaces).find(s => s.piece?.id === fromPieceId)
+        const toSpace = Object.values(state.board.spaces).find(s => s.piece?.id === toPieceId)
+        
+        if (!fromSpace?.piece || !toSpace?.piece) {
+          get().addToLog('Cannot find one or both pieces for energy transfer')
+          return false
+        }
+        
+        if (fromSpace.piece.energy < amount) {
+          get().addToLog('Not enough energy to transfer')
+          return false
+        }
+        
+        // Check if pieces are adjacent (optional rule)
+        if (!get().areSpacesAdjacent(fromSpace.id, toSpace.id)) {
+          get().addToLog('Pieces must be adjacent to transfer energy')
+          return false
+        }
+        
+        set(state => ({
+          ...state,
+          board: {
+            ...state.board,
+            spaces: {
+              ...state.board.spaces,
+              [fromSpace.id]: {
+                ...fromSpace,
+                piece: fromSpace.piece ? {
+                  ...fromSpace.piece,
+                  energy: fromSpace.piece.energy - amount
+                } : null
+              },
+              [toSpace.id]: {
+                ...toSpace,
+                piece: toSpace.piece ? {
+                  ...toSpace.piece,
+                  energy: toSpace.piece.energy + amount
+                } : null
+              }
+            }
+          }
+        }))
+        
+        get().addToLog(`Transferred ${amount} energy from ${fromPieceId} to ${toPieceId}`)
+        return true
+      },
+
+      convertFoodToEnergy: (pieceId: string) => {
+        const state = get()
+        const space = Object.values(state.board.spaces).find(s => s.piece?.id === pieceId)
+        
+        if (!space?.piece) {
+          get().addToLog('Piece not found for food conversion')
+          return false
+        }
+        
+        const piece = space.piece
+        const totalStomachFood = piece.stomach.grains + piece.stomach.berries + piece.stomach.salmon
+        
+        if (totalStomachFood === 0) {
+          get().addToLog('No food in stomach to convert')
+          return false
+        }
+        
+        // Convert stomach food to energy (1:1 ratio)
+        const energyGained = totalStomachFood
+        
+        set(state => ({
+          ...state,
+          board: {
+            ...state.board,
+            spaces: {
+              ...state.board.spaces,
+              [space.id]: {
+                ...space,
+                piece: {
+                  ...piece,
+                  energy: piece.energy + energyGained,
+                  stomach: {
+                    grains: 0,
+                    berries: 0,
+                    salmon: 0
+                  }
+                }
+              }
+            }
+          }
+        }))
+        
+        get().addToLog(`Converted ${totalStomachFood} food to ${energyGained} energy`)
         return true
       },
 
@@ -998,6 +1197,15 @@ export const useGameStore = create<GameState>()(
         if (nextPhase === 'eat') {
           get().nextPlayer()
         }
+      },
+
+      setTurnPhase: (phase: 'eat' | 'movement' | 'harvest' | 'digestion') => {
+        set(state => ({
+          ...state,
+          turnPhase: phase
+        }))
+        
+        get().addToLog(`Turn phase set to: ${phase}`)
       },
 
       advanceSeason: () => {
@@ -1022,10 +1230,42 @@ export const useGameStore = create<GameState>()(
       },
 
       nextPlayer: () => {
+        const state = get()
+        const newPlayerIndex = (state.currentPlayerIndex + 1) % (state.players.length - 1)
+        let newTurn = state.turn
+        let newSeason = state.season
+        let newYear = state.year
+        
+        // If we're back to player 0, increment turn counter
+        if (newPlayerIndex === 0) {
+          newTurn = state.turn + 1
+          
+          // Check if season should advance (every 7 turns)
+          if (newTurn % 7 === 1 && newTurn > 1) {
+            const seasons: GameState['season'][] = ['Spring', 'Summer', 'Autumn', 'Winter']
+            const currentSeasonIndex = seasons.indexOf(state.season)
+            newSeason = seasons[(currentSeasonIndex + 1) % seasons.length]
+            
+            // If we're going from Winter back to Spring, increment the year
+            if (state.season === 'Winter' && newSeason === 'Spring') {
+              newYear = state.year + 1
+              get().addToLog(`Season changed to ${newSeason}! Year ${newYear} begins.`)
+            } else {
+              get().addToLog(`Season changed to ${newSeason}!`)
+            }
+          }
+        }
+        
         set(state => ({
           ...state,
-          currentPlayerIndex: (state.currentPlayerIndex + 1) % (state.players.length - 1)
+          currentPlayerIndex: newPlayerIndex,
+          turn: newTurn,
+          season: newSeason,
+          year: newYear,
+          turnPhase: 'eat' // Reset to first phase for new player
         }))
+        
+        get().addToLog(`Turn ${newTurn}: Player ${newPlayerIndex + 1}'s turn`)
       },
 
       // Local actions (not synced in multiplayer)
@@ -1136,6 +1376,7 @@ export const useGameStore = create<GameState>()(
           players: createInitialPlayers(),
           currentPlayerIndex: 0,
           season: 'Spring',
+          year: 1,
           turn: 0,
           gamePhase: 'setup',
           selectedSpaceId: null,
@@ -1160,15 +1401,16 @@ export const useGameStore = create<GameState>()(
         const totalResources = player.pieces.reduce((total, piece) => ({
           grains: total.grains + piece.resources.grains,
           berries: total.berries + piece.resources.berries,
-          salmon: total.salmon + piece.resources.salmon,
-          fat: total.fat + piece.resources.fat
-        }), { grains: 0, berries: 0, salmon: 0, fat: 0 })
+          salmon: total.salmon + piece.resources.salmon
+        }), { grains: 0, berries: 0, salmon: 0 })
+        
+        const totalEnergy = player.pieces.reduce((total, piece) => total + piece.energy, 0)
         
         const resourceScore = 
           totalResources.grains * 1 +
           totalResources.berries * 2 +
           totalResources.salmon * 3 +
-          totalResources.fat * 4
+          totalEnergy * 4
 
         const territoryScore = get().getPlayerTerritories(playerId).length * 2
         return resourceScore + territoryScore
@@ -1203,6 +1445,7 @@ export const useGameStore = create<GameState>()(
           if (!space.piece || !space.canProduce) return
 
           const newResources = { ...space.piece.resources }
+          let newEnergy = space.piece.energy
           
           switch (space.quadrant) {
             case 'Pastures':
@@ -1215,14 +1458,15 @@ export const useGameStore = create<GameState>()(
               newResources.salmon += production.salmon
               break
           }
-          // All bears gain fat regardless of location (from eating food)
-          newResources.fat += production.fat
+          // All bears gain energy regardless of location (from eating food)
+          newEnergy += production.energy
 
           updatedSpaces[space.id] = {
             ...space,
             piece: {
               ...space.piece,
-              resources: newResources
+              resources: newResources,
+              energy: newEnergy
             }
           }
         })
@@ -1240,6 +1484,7 @@ export const useGameStore = create<GameState>()(
               if (!space?.canProduce) return piece
 
               const newResources = { ...piece.resources }
+              let newEnergy = piece.energy
               
               switch (space.quadrant) {
                 case 'Pastures':
@@ -1252,12 +1497,13 @@ export const useGameStore = create<GameState>()(
                   newResources.salmon += production.salmon
                   break
               }
-              // All bears gain fat regardless of location (from eating food)
-              newResources.fat += production.fat
+              // All bears gain energy regardless of location (from eating food)
+              newEnergy += production.energy
 
               return {
                 ...piece,
-                resources: newResources
+                resources: newResources,
+                energy: newEnergy
               }
             })
           }))

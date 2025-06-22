@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge'
 import { motion } from 'framer-motion'
 
 export function SeasonIndicator() {
-  const { season, turn } = useGameStore()
+  const { season, year } = useGameStore()
 
   const seasonData = {
     Spring: { emoji: '🌸', color: 'bg-green-500', textColor: 'text-green-100' },
@@ -15,7 +15,6 @@ export function SeasonIndicator() {
   }
 
   const currentSeasonData = seasonData[season as keyof typeof seasonData]
-  const year = Math.floor(turn / 4) + 1
 
   return (
     <motion.div 

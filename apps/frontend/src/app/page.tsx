@@ -6,17 +6,17 @@ const GameBoard = dynamic(() => import('@/components/game/GameBoard').then(mod =
   ssr: false
 })
 import { GameControls } from '@/components/game/GameControls'
-import { PlayerInfo } from '@/components/game/PlayerInfo'
-import { ResourcePanel } from '@/components/game/ResourcePanel'
+import { PlayerControlCard } from '@/components/game/PlayerControlCard'
 import { SeasonIndicator } from '@/components/game/SeasonIndicator'
 import { GameLog } from '@/components/game/GameLog'
 import { MultiplayerControls } from '@/components/game/MultiplayerControls'
 import { RulesDialog } from '@/components/game/RulesDialog'
+import { PlayerInventoryBoard } from '@/components/game/PlayerInventoryBoard'
 import { useGameStore } from '@/store/gameStore'
 import { useEffect } from 'react'
 
 export default function Home() {
-  const { initializeGame, gamePhase } = useGameStore()
+  const { initializeGame, gamePhase, currentPlayerIndex, players } = useGameStore()
 
   useEffect(() => {
     if (gamePhase === 'setup') {
@@ -36,29 +36,39 @@ export default function Home() {
         </div>
 
         {/* Main Game Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Left Sidebar - Player Info & Resources */}
-          <aside className="lg:col-span-1 space-y-4">
-            <PlayerInfo />
-            <ResourcePanel />
-          </aside>
-
-          {/* Center - Game Board */}
-          <main className="lg:col-span-2 flex justify-center">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Center Column - Player Controls & Game Board */}
+          <main className="lg:col-span-2 space-y-4">
+            {/* Player 1 Controls - Above board */}
+            {players.length > 0 && (
+              <PlayerControlCard playerId={String(players[0]?.id)} />
+            )}
+            
+            {/* Game Board */}
             <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-3 sm:p-6 w-full">
               <GameBoard />
-              <div className="mt-4">
-                <GameControls />
-              </div>
             </div>
+            
+            {/* Player 2 Controls - Below board */}
+            {players.length > 1 && (
+              <PlayerControlCard playerId={String(players[1]?.id)} />
+            )}
           </main>
 
-          {/* Right Sidebar - Game Log */}
+          {/* Right Sidebar - Game Controls & Log */}
           <aside className="lg:col-span-1 space-y-4">
+            <GameControls />
             <GameLog />
             <MultiplayerControls />
           </aside>
         </div>
+
+        {/* Player Inventory Board */}
+        {players.length > 0 && (
+          <div className="mt-8">
+            <PlayerInventoryBoard playerId={players[currentPlayerIndex]?.id || players[0]?.id} />
+          </div>
+        )}
 
         {/* Rules Dialog */}
         <RulesDialog />
