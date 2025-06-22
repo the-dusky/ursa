@@ -14,16 +14,20 @@ interface BearInventoryProps {
     grains: number
     berries: number
     salmon: number
+    honey: number
+    bearMeat: number
   }
   energy: number
   fat: number
 }
 
-const ResourceToken = ({ type, count }: { type: 'grains' | 'berries' | 'salmon', count: number }) => {
+const ResourceToken = ({ type, count }: { type: 'grains' | 'berries' | 'salmon' | 'honey' | 'bearMeat', count: number }) => {
   const colors = {
     grains: 'bg-yellow-600',
     berries: 'bg-purple-600',
-    salmon: 'bg-pink-600'
+    salmon: 'bg-pink-600',
+    honey: 'bg-amber-600',
+    bearMeat: 'bg-red-600'
   }
   
   if (count === 0) return null
@@ -52,10 +56,12 @@ const BearInventory = ({ bearId, bearType, resources, energy, fat }: BearInvento
       <div className="flex flex-col items-center space-y-2">
         <div className="text-sm font-medium text-gray-700">Basket</div>
         <div className="w-20 h-24 border-2 border-amber-600 rounded-lg bg-amber-50 flex flex-col items-center justify-center space-y-1 p-2">
-          <div className="flex space-x-1">
+          <div className="flex flex-wrap gap-1 justify-center">
             <ResourceToken type="grains" count={resources.grains} />
             <ResourceToken type="berries" count={resources.berries} />
             <ResourceToken type="salmon" count={resources.salmon} />
+            <ResourceToken type="honey" count={resources.honey} />
+            <ResourceToken type="bearMeat" count={resources.bearMeat} />
           </div>
         </div>
       </div>

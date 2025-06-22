@@ -46,10 +46,12 @@ export function PlayerInfo() {
                       <div className="font-medium">
                         {piece.type === 'bear' ? '🐻' : '🐼'} {space?.quadrant}
                       </div>
-                      <div className="grid grid-cols-4 gap-1 mt-1">
+                      <div className="grid grid-cols-3 gap-1 mt-1 text-xs">
                         <div>🌾 {piece.resources.grains}</div>
                         <div>🫐 {piece.resources.berries}</div>
                         <div>🐟 {piece.resources.salmon}</div>
+                        <div>🍯 {piece.resources.honey}</div>
+                        <div>🥩 {piece.resources.bearMeat}</div>
                         <div>⚡ {piece.energy}</div>
                       </div>
                     </div>

@@ -4,6 +4,7 @@ import { useGameStore } from '@/store/gameStore'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { EMERGENCY_CONVERSION } from '@/shared/gameRules'
 
 interface PlayerControlCardProps {
   playerId: string
@@ -20,7 +21,10 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
     eatFood,
     season,
     board,
-    hibernateBear
+    hibernateBear,
+    energyTaxPaid,
+    payEnergyTax,
+    burnFatForEmergencyEnergy
   } = useGameStore()
   
   const player = players.find(p => String(p.id) === playerId)
@@ -33,6 +37,9 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
     const space = Object.values(board.spaces).find(s => s.piece?.id === piece.id)
     return space?.quadrant === 'Mountains'
   })
+  
+  // Check if all player's bears are hibernating
+  const allBearsHibernating = player?.pieces.length > 0 && player.pieces.every(piece => piece.isHibernating)
   
   const baseTurnPhases = ['movement', 'harvest', 'eat'] as const
   const turnPhases = hasBearsInMountainsDuringWinter 
@@ -56,9 +63,16 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
     if (phase === 'complete') {
       nextPlayer()
     } else if (phase === 'harvest') {
+      // Check if energy tax is paid before allowing harvest
+      if (!energyTaxPaid) {
+        return // Block harvest if tax not paid
+      }
+      
       // Automatically harvest resources for all player's bears
-      harvestAllPlayerResources(playerId)
-      setTurnPhase('harvest')
+      const success = harvestAllPlayerResources(playerId)
+      if (success) {
+        setTurnPhase('harvest')
+      }
     } else if (phase === 'hibernation') {
       // Show hibernation options for bears in mountains
       setTurnPhase('hibernation')
@@ -67,7 +81,7 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
     }
   }
 
-  const handleEatResource = (pieceId: string, resourceType: 'grains' | 'berries' | 'salmon', convertTo: 'energy' | 'fat') => {
+  const handleEatResource = (pieceId: string, resourceType: 'grains' | 'berries' | 'salmon' | 'honey' | 'bearMeat', convertTo: 'energy' | 'fat') => {
     if (!isCurrentPlayer || turnPhase !== 'eat') return
     
     // Convert 1 unit of the resource directly to energy or fat
@@ -81,6 +95,16 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
     if (!isCurrentPlayer || turnPhase !== 'hibernation') return
     
     hibernateBear(pieceId)
+  }
+
+  const handlePayEnergyTax = () => {
+    if (!isCurrentPlayer || turnPhase !== 'movement') return
+    payEnergyTax()
+  }
+
+  const handleConvertFat = (pieceId: string) => {
+    if (!isCurrentPlayer || turnPhase !== 'movement') return
+    burnFatForEmergencyEnergy(pieceId)
   }
 
   return (
@@ -110,7 +134,90 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
           </div>
         </div>
 
-        {/* Turn Phase Controls */}
+        {/* Hibernation-only interface */}
+        {allBearsHibernating && isCurrentPlayer ? (
+          <div className="space-y-3">
+            <div className="text-center text-sm text-blue-600 font-medium">
+              💤 All Bears Hibernating 💤
+            </div>
+            <div className="text-center text-xs text-gray-600">
+              Bears will wake up in Spring
+            </div>
+            <div className="flex justify-center">
+              <Button
+                onClick={() => handlePhaseChange('complete')}
+                variant="default"
+                size="sm"
+                className="bg-green-500 hover:bg-green-600 text-white"
+              >
+                ✓ Complete Turn
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Movement Phase Actions */}
+            {isCurrentPlayer && turnPhase === 'movement' && (
+              <div className="space-y-2 mb-4">
+                <div className="font-medium text-sm">Movement Phase Actions:</div>
+                
+                {/* Pay Energy Tax Button */}
+                <div className="flex gap-2">
+                  <Button
+                    onClick={handlePayEnergyTax}
+                    variant={energyTaxPaid ? "secondary" : "default"}
+                    size="sm"
+                    disabled={energyTaxPaid}
+                    className={`flex-1 ${energyTaxPaid ? 'bg-green-100 text-green-800' : 'bg-red-500 hover:bg-red-600 text-white'}`}
+                  >
+                    {energyTaxPaid ? '✓ Tax Paid' : '💰 Pay Energy Tax'}
+                  </Button>
+                </div>
+
+                {/* Convert Fat Buttons - Individual Bears */}
+                <div className="space-y-1">
+                  {player?.pieces
+                    .filter(piece => !piece.isHibernating && piece.fat > 0)
+                    .map((piece, index) => {
+                      const space = Object.values(board.spaces).find(s => s.piece?.id === piece.id)
+                      const fatToConvert = Math.min(piece.fat, EMERGENCY_CONVERSION?.maxFatPerTurn || 5)
+                      const energyGained = fatToConvert * 2
+                      
+                      return (
+                        <div key={piece.id} className="border rounded p-2 bg-gray-50">
+                          <div className="flex gap-2 items-center mb-1">
+                            <span className="text-xs font-medium text-gray-700">
+                              🐻 Bear #{index + 1} in {space?.quadrant}
+                            </span>
+                          </div>
+                          <div className="flex gap-2 items-center">
+                            <Button
+                              onClick={() => handleConvertFat(piece.id)}
+                              variant="outline"
+                              size="sm"
+                              className="flex-1 text-xs"
+                              disabled={piece.fat === 0}
+                            >
+                              🔥 Burn {fatToConvert} Fat → +{energyGained} Energy
+                            </Button>
+                            <span className="text-xs text-gray-600 whitespace-nowrap">
+                              E:{piece.energy} F:{piece.fat}
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    })
+                  }
+                  {player?.pieces.filter(piece => !piece.isHibernating && piece.fat > 0).length === 0 && (
+                    <div className="text-xs text-gray-500 italic">
+                      No bears with fat available
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            
+            {/* Turn Phase Controls */}
         <div className="space-y-2">
           <div className="font-medium text-sm">Turn Phase:</div>
           <div className="grid grid-cols-5 gap-1">
@@ -229,6 +336,54 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
                           </div>
                         )}
                       </div>
+                      <div className="space-y-0.5">
+                        <div className="flex items-center justify-between">
+                          <span>🍯</span>
+                          <span className="text-xs">{isEmpty ? 0 : piece.resources.honey}</span>
+                        </div>
+                        {isCurrentPlayer && turnPhase === 'eat' && !isEmpty && piece && piece.resources.honey > 0 && (
+                          <div className="grid grid-cols-2 gap-0.5">
+                            <button
+                              onClick={() => handleEatResource(piece.id, 'honey', 'energy')}
+                              className="text-xs bg-yellow-100 hover:bg-yellow-200 rounded px-1 py-0.5"
+                              title="4 energy"
+                            >
+                              ⚡
+                            </button>
+                            <button
+                              onClick={() => handleEatResource(piece.id, 'honey', 'fat')}
+                              className="text-xs bg-orange-100 hover:bg-orange-200 rounded px-1 py-0.5"
+                              title="3 fat"
+                            >
+                              🟫
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      <div className="space-y-0.5">
+                        <div className="flex items-center justify-between">
+                          <span>🥩</span>
+                          <span className="text-xs">{isEmpty ? 0 : piece.resources.bearMeat}</span>
+                        </div>
+                        {isCurrentPlayer && turnPhase === 'eat' && !isEmpty && piece && piece.resources.bearMeat > 0 && (
+                          <div className="grid grid-cols-2 gap-0.5">
+                            <button
+                              onClick={() => handleEatResource(piece.id, 'bearMeat', 'energy')}
+                              className="text-xs bg-yellow-100 hover:bg-yellow-200 rounded px-1 py-0.5"
+                              title="6 energy"
+                            >
+                              ⚡
+                            </button>
+                            <button
+                              onClick={() => handleEatResource(piece.id, 'bearMeat', 'fat')}
+                              className="text-xs bg-orange-100 hover:bg-orange-200 rounded px-1 py-0.5"
+                              title="8 fat"
+                            >
+                              🟫
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                     
                     {/* Right column - Energy & Fat */}
@@ -255,6 +410,7 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
                     const isAlreadyHibernating = piece.isHibernating
                     
                     if (isInMountains && !isAlreadyHibernating) {
+                      const hasEnoughFat = piece.fat >= 20
                       return (
                         <div className="mt-1">
                           <Button
@@ -262,8 +418,10 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
                             variant="outline"
                             className="w-full text-xs h-6"
                             onClick={() => handleHibernate(piece.id)}
+                            disabled={!hasEnoughFat}
+                            title={hasEnoughFat ? "Hibernate (costs 20 fat)" : `Need 20 fat (have ${piece.fat})`}
                           >
-                            💤 Hibernate
+                            💤 Hibernate {hasEnoughFat ? '' : `(${piece.fat}/20)`}
                           </Button>
                         </div>
                       )
@@ -284,6 +442,8 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
             })}
           </div>
         </div>
+          </>
+        )}
       </CardContent>
     </Card>
   )

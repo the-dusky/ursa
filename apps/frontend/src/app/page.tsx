@@ -11,6 +11,7 @@ import { SeasonIndicator } from '@/components/game/SeasonIndicator'
 import { GameLog } from '@/components/game/GameLog'
 import { MultiplayerControls } from '@/components/game/MultiplayerControls'
 import { RulesDialog } from '@/components/game/RulesDialog'
+import { RulesReferenceCard } from '@/components/game/RulesReferenceCard'
 import { useGameStore } from '@/store/gameStore'
 import { useEffect } from 'react'
 
@@ -31,11 +32,24 @@ export default function Home() {
           <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">
             Seasonal Board Game
           </h1>
-          <SeasonIndicator />
+          <div className="flex items-center gap-4">
+            <a 
+              href="/simulation"
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
+            >
+              🧪 Simulation Lab
+            </a>
+            <SeasonIndicator />
+          </div>
         </div>
 
         {/* Main Game Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+          {/* Left Sidebar - Rules Reference */}
+          <aside className="lg:col-span-1 space-y-4">
+            <RulesReferenceCard />
+          </aside>
+          
           {/* Center Column - Player Controls & Game Board */}
           <main className="lg:col-span-2 space-y-4">
             {/* Player 1 Controls - Above board */}

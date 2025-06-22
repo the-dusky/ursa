@@ -59,7 +59,7 @@ export function GameSpace({ space, x, y, size }: GameSpaceProps) {
   const getIndicator = () => {
     if (space.quadrant === 'Mountains') return '⛰️'
     if (space.quadrant === 'Pastures') return '🌾'
-    if (space.quadrant === 'Forests') return '🌲'
+    if (space.quadrant === 'Forests') return space.hasHoney ? '🍯' : '🌲'
     if (space.quadrant === 'Riverlands') return '🐟'
     return ''
   }
