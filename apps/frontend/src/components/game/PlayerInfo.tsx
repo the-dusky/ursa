@@ -50,7 +50,7 @@ export function PlayerInfo() {
                         <div>🌾 {piece.resources.grains}</div>
                         <div>🫐 {piece.resources.berries}</div>
                         <div>🐟 {piece.resources.salmon}</div>
-                        <div>🥩 {piece.resources.fat}</div>
+                        <div>⚡ {piece.energy}</div>
                       </div>
                     </div>
                   )

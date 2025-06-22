@@ -34,9 +34,9 @@ export function GameBoard() {
           />
         ))}
 
-        {/* Quadrant divider lines */}
+        {/* Quadrant divider lines - rotated 45° */}
         {[0, 1, 2, 3].map(i => {
-          const angle = (i * Math.PI) / 2
+          const angle = (i * Math.PI) / 2 - Math.PI/4
           const x1 = centerX + Math.cos(angle) * 80
           const y1 = centerY + Math.sin(angle) * 80
           const x2 = centerX + Math.cos(angle) * 380
@@ -65,27 +65,21 @@ export function GameBoard() {
           strokeDasharray="8,8"
         />
 
-        {/* Quadrant Labels */}
-        <text x={centerX + 320} y={centerY - 20} textAnchor="middle" className="fill-slate-300 text-lg font-medium">
+        {/* Quadrant Labels - Rotated 45° so Mountains are at top */}
+        <text x={centerX} y={centerY - 320} textAnchor="middle" className="fill-slate-300 text-lg font-medium">
           ⛰️ Mountains
         </text>
-        <text x={centerX - 20} y={centerY - 320} textAnchor="middle" className="fill-slate-300 text-lg font-medium">
+        <text x={centerX - 226} y={centerY - 226} textAnchor="middle" className="fill-slate-300 text-lg font-medium">
           🌾 Pastures
         </text>
-        <text x={centerX - 320} y={centerY + 20} textAnchor="middle" className="fill-slate-300 text-lg font-medium">
+        <text x={centerX} y={centerY + 320} textAnchor="middle" className="fill-slate-300 text-lg font-medium">
           🌲 Forests
         </text>
-        <text x={centerX + 20} y={centerY + 320} textAnchor="middle" className="fill-slate-300 text-lg font-medium">
+        <text x={centerX + 226} y={centerY - 226} textAnchor="middle" className="fill-slate-300 text-lg font-medium">
           🏞️ Riverlands
         </text>
 
-        {/* Mountain sub-area labels */}
-        <text x={centerX + 160} y={centerY - 80} textAnchor="middle" className="fill-slate-400 text-sm">
-          🐻 Caves (Safe)
-        </text>
-        <text x={centerX + 260} y={centerY - 160} textAnchor="middle" className="fill-red-400 text-sm">
-          ⚔️ Hunting (Danger)
-        </text>
+        {/* Mountain areas are now unified */}
 
         {/* Game Spaces - trapezoid sectors */}
         {Object.values(board.spaces).map(space => (
@@ -230,9 +224,7 @@ function GameSpaceSVG({ space }: GameSpaceSVGProps) {
 
     switch (space.quadrant) {
       case 'Mountains':
-        return space.subArea === 'Caves' 
-          ? '#64748b' // slate-500
-          : '#ea580c' // orange-600
+        return '#64748b' // slate-500 - all mountains are gray
       case 'Pastures':
         return '#16a34a' // green-600
       case 'Forests':
@@ -255,8 +247,7 @@ function GameSpaceSVG({ space }: GameSpaceSVGProps) {
   }
 
   const getIndicator = () => {
-    if (space.subArea === 'Caves') return '🕳️'
-    if (space.subArea === 'Hunting Grounds') return '⚔️'
+    if (space.quadrant === 'Mountains') return '⛰️'
     if (space.quadrant === 'Pastures') return '🌾'
     if (space.quadrant === 'Forests') return '🌲'
     if (space.quadrant === 'Riverlands') return '🐟'

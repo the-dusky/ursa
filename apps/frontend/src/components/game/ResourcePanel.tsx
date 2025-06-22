@@ -67,8 +67,9 @@ export function ResourcePanel() {
                     grains: total.grains + piece.resources.grains,
                     berries: total.berries + piece.resources.berries,
                     salmon: total.salmon + piece.resources.salmon,
-                    fat: total.fat + piece.resources.fat
-                  }), { grains: 0, berries: 0, salmon: 0, fat: 0 })
+                  }), { grains: 0, berries: 0, salmon: 0 })
+                  
+                  const totalEnergy = player.pieces.reduce((total, piece) => total + piece.energy, 0)
                   
                   return (
                     <>
@@ -129,19 +130,19 @@ export function ResourcePanel() {
                         </div>
                       </div>
 
-                      {/* Fat */}
+                      {/* Energy */}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <span>🥩</span>
-                          <span className="text-sm text-slate-300">Fat</span>
+                          <span>⚡</span>
+                          <span className="text-sm text-slate-300">Energy</span>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className="text-sm font-mono text-slate-200">
-                            {totalResources.fat}
+                            {totalEnergy}
                           </span>
                           <div className="w-16">
                             <Progress 
-                              value={(totalResources.fat / 30) * 100} 
+                              value={(totalEnergy / 30) * 100} 
                               className="h-2"
                             />
                           </div>

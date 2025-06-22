@@ -30,9 +30,7 @@ export function GameSpace({ space, x, y, size }: GameSpaceProps) {
 
     switch (space.quadrant) {
       case 'Mountains':
-        return space.subArea === 'Caves' 
-          ? 'bg-cave border-slate-600' 
-          : 'bg-hunting border-orange-600'
+        return 'bg-slate-500 border-slate-600' // All mountains are gray
       case 'Pastures':
         return 'bg-pasture border-green-600'
       case 'Forests':
@@ -59,8 +57,7 @@ export function GameSpace({ space, x, y, size }: GameSpaceProps) {
   }
 
   const getIndicator = () => {
-    if (space.subArea === 'Caves') return '🕳️'
-    if (space.subArea === 'Hunting Grounds') return '⚔️'
+    if (space.quadrant === 'Mountains') return '⛰️'
     if (space.quadrant === 'Pastures') return '🌾'
     if (space.quadrant === 'Forests') return '🌲'
     if (space.quadrant === 'Riverlands') return '🐟'
@@ -133,12 +130,6 @@ export function GameSpace({ space, x, y, size }: GameSpaceProps) {
         )}
       </div>
 
-      {/* Debug Info (only in development) */}
-      {process.env.NODE_ENV === 'development' && (
-        <div className="absolute -bottom-6 left-1/2 transform -translate-x-1/2 text-xs text-slate-500">
-          {space.ring}-{space.position}
-        </div>
-      )}
     </motion.div>
   )
 }

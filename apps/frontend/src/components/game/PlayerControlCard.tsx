@@ -17,7 +17,11 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
     turnPhase,
     setTurnPhase,
     harvestAllPlayerResources,
-    eatFood
+    eatFood,
+    convertFoodToEnergy,
+    season,
+    board,
+    hibernateBear
   } = useGameStore()
   
   const player = players.find(p => String(p.id) === playerId)
@@ -25,7 +29,16 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
   
   if (!player || player.id === 'bears') return null
 
-  const turnPhases = ['eat', 'movement', 'harvest', 'digestion', 'complete'] as const
+  // Check if player has bears in mountains during winter (for hibernation phase)
+  const hasBearsInMountainsDuringWinter = season === 'Winter' && player?.pieces.some(piece => {
+    const space = Object.values(board.spaces).find(s => s.piece?.id === piece.id)
+    return space?.quadrant === 'Mountains'
+  })
+  
+  const baseTurnPhases = ['eat', 'movement', 'harvest', 'digestion'] as const
+  const turnPhases = hasBearsInMountainsDuringWinter 
+    ? [...baseTurnPhases, 'hibernation', 'complete'] as const
+    : [...baseTurnPhases, 'complete'] as const
   
   const getCurrentPhaseIndex = () => {
     const currentIndex = turnPhases.findIndex(phase => phase === turnPhase)
@@ -47,8 +60,19 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
       // Automatically harvest resources for all player's bears
       harvestAllPlayerResources(playerId)
       setTurnPhase('harvest')
+    } else if (phase === 'digestion') {
+      // Convert all stomach contents to energy for all player's bears
+      player?.pieces.forEach(piece => {
+        if (piece.stomach.grains > 0 || piece.stomach.berries > 0 || piece.stomach.salmon > 0) {
+          convertFoodToEnergy(piece.id)
+        }
+      })
+      setTurnPhase('digestion')
+    } else if (phase === 'hibernation') {
+      // Show hibernation options for bears in mountains
+      setTurnPhase('hibernation')
     } else {
-      setTurnPhase(phase as 'eat' | 'movement' | 'harvest' | 'digestion')
+      setTurnPhase(phase as 'eat' | 'movement' | 'harvest' | 'digestion' | 'hibernation')
     }
   }
 
@@ -60,6 +84,12 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
     if (!piece || piece.resources[resourceType] <= 0) return
     
     eatFood(pieceId, resourceType, 1)
+  }
+
+  const handleHibernate = (pieceId: string) => {
+    if (!isCurrentPlayer || turnPhase !== 'hibernation') return
+    
+    hibernateBear(pieceId)
   }
 
   return (
@@ -187,6 +217,38 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
                       </div>
                     </div>
                   </div>
+                  
+                  {/* Hibernation option during hibernation phase */}
+                  {isCurrentPlayer && turnPhase === 'hibernation' && !isEmpty && piece && (() => {
+                    const space = Object.values(board.spaces).find(s => s.piece?.id === piece.id)
+                    const isInMountains = space?.quadrant === 'Mountains'
+                    const isAlreadyHibernating = piece.isHibernating
+                    
+                    if (isInMountains && !isAlreadyHibernating) {
+                      return (
+                        <div className="mt-1">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="w-full text-xs h-6"
+                            onClick={() => handleHibernate(piece.id)}
+                          >
+                            💤 Hibernate
+                          </Button>
+                        </div>
+                      )
+                    }
+                    
+                    if (isAlreadyHibernating) {
+                      return (
+                        <div className="mt-1 text-center text-xs text-blue-600">
+                          💤 Hibernating
+                        </div>
+                      )
+                    }
+                    
+                    return null
+                  })()}
                 </div>
               )
             })}
