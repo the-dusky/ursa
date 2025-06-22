@@ -987,7 +987,7 @@ export const useGameStore = create<GameState>()(
 
       harvestAllPlayerResources: (playerId) => {
         const state = get()
-        const player = state.players.find(p => p.id === playerId)
+        const player = state.players.find(p => String(p.id) === String(playerId))
         if (!player) {
           get().addToLog('Player not found')
           return false
@@ -1001,7 +1001,7 @@ export const useGameStore = create<GameState>()(
         
         // Update spaces
         Object.values(state.board.spaces).forEach(space => {
-          if (space.piece && space.piece.playerId === playerId && space.canProduce) {
+          if (space.piece && String(space.piece.playerId) === String(playerId) && space.canProduce) {
             const newResources = { ...space.piece.resources }
             
             switch (space.quadrant) {
@@ -1032,7 +1032,7 @@ export const useGameStore = create<GameState>()(
         
         // Update player pieces
         const updatedPlayers = state.players.map(p => {
-          if (p.id === playerId) {
+          if (String(p.id) === String(playerId)) {
             return {
               ...p,
               pieces: p.pieces.map(piece => {
@@ -1487,7 +1487,7 @@ export const useGameStore = create<GameState>()(
       getPlayerTerritories: (playerId) => {
         const state = get()
         return Object.values(state.board.spaces)
-          .filter(space => space.piece?.playerId === playerId)
+          .filter(space => String(space.piece?.playerId) === String(playerId))
           .map(space => space.id)
       },
 
