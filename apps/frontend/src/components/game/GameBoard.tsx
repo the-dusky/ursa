@@ -34,9 +34,9 @@ export function GameBoard() {
           />
         ))}
 
-        {/* Quadrant divider lines - rotated 45° */}
+        {/* Quadrant divider lines - rotated 135° (-45°) */}
         {[0, 1, 2, 3].map(i => {
-          const angle = (i * Math.PI) / 2 - Math.PI/4
+          const angle = (i * Math.PI) / 2 + Math.PI/4
           const x1 = centerX + Math.cos(angle) * 80
           const y1 = centerY + Math.sin(angle) * 80
           const x2 = centerX + Math.cos(angle) * 380

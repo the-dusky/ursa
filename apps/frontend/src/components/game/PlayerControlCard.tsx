@@ -18,7 +18,6 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
     setTurnPhase,
     harvestAllPlayerResources,
     eatFood,
-    convertFoodToEnergy,
     season,
     board,
     hibernateBear
@@ -35,7 +34,7 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
     return space?.quadrant === 'Mountains'
   })
   
-  const baseTurnPhases = ['eat', 'movement', 'harvest', 'digestion'] as const
+  const baseTurnPhases = ['movement', 'harvest', 'eat'] as const
   const turnPhases = hasBearsInMountainsDuringWinter 
     ? [...baseTurnPhases, 'hibernation', 'complete'] as const
     : [...baseTurnPhases, 'complete'] as const
@@ -60,30 +59,22 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
       // Automatically harvest resources for all player's bears
       harvestAllPlayerResources(playerId)
       setTurnPhase('harvest')
-    } else if (phase === 'digestion') {
-      // Convert all stomach contents to energy for all player's bears
-      player?.pieces.forEach(piece => {
-        if (piece.stomach.grains > 0 || piece.stomach.berries > 0 || piece.stomach.salmon > 0) {
-          convertFoodToEnergy(piece.id)
-        }
-      })
-      setTurnPhase('digestion')
     } else if (phase === 'hibernation') {
       // Show hibernation options for bears in mountains
       setTurnPhase('hibernation')
     } else {
-      setTurnPhase(phase as 'eat' | 'movement' | 'harvest' | 'digestion' | 'hibernation')
+      setTurnPhase(phase as 'movement' | 'harvest' | 'eat' | 'hibernation')
     }
   }
 
-  const handleEatResource = (pieceId: string, resourceType: 'grains' | 'berries' | 'salmon') => {
+  const handleEatResource = (pieceId: string, resourceType: 'grains' | 'berries' | 'salmon', convertTo: 'energy' | 'fat') => {
     if (!isCurrentPlayer || turnPhase !== 'eat') return
     
-    // Move 1 unit of the resource to the stomach
+    // Convert 1 unit of the resource directly to energy or fat
     const piece = player?.pieces.find(p => p.id === pieceId)
     if (!piece || piece.resources[resourceType] <= 0) return
     
-    eatFood(pieceId, resourceType, 1)
+    eatFood(pieceId, resourceType, 1, convertTo)
   }
 
   const handleHibernate = (pieceId: string) => {
@@ -163,56 +154,95 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
                     {isEmpty ? '🐻' : (piece.type === 'bear' ? '🐻' : '🐼')}
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-1 h-16">
+                  <div className="grid grid-cols-2 gap-1 h-20">
                     {/* Left column - Resources */}
                     <div className="space-y-0.5">
-                      <div 
-                        className={`flex items-center justify-between ${
-                          isCurrentPlayer && turnPhase === 'eat' && !isEmpty && piece.resources.grains > 0
-                            ? 'cursor-pointer hover:bg-green-100 rounded px-1' 
-                            : ''
-                        }`}
-                        onClick={() => !isEmpty && piece && handleEatResource(piece.id, 'grains')}
-                      >
-                        <span>🌾</span>
-                        <span className="text-xs">{isEmpty ? 0 : piece.resources.grains}</span>
+                      <div className="space-y-0.5">
+                        <div className="flex items-center justify-between">
+                          <span>🌾</span>
+                          <span className="text-xs">{isEmpty ? 0 : piece.resources.grains}</span>
+                        </div>
+                        {isCurrentPlayer && turnPhase === 'eat' && !isEmpty && piece && piece.resources.grains > 0 && (
+                          <div className="grid grid-cols-2 gap-0.5">
+                            <button
+                              onClick={() => handleEatResource(piece.id, 'grains', 'energy')}
+                              className="text-xs bg-yellow-100 hover:bg-yellow-200 rounded px-1 py-0.5"
+                              title="3 energy"
+                            >
+                              ⚡
+                            </button>
+                            <button
+                              onClick={() => handleEatResource(piece.id, 'grains', 'fat')}
+                              className="text-xs bg-orange-100 hover:bg-orange-200 rounded px-1 py-0.5"
+                              title="1 fat"
+                            >
+                              🟫
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      <div 
-                        className={`flex items-center justify-between ${
-                          isCurrentPlayer && turnPhase === 'eat' && !isEmpty && piece.resources.berries > 0
-                            ? 'cursor-pointer hover:bg-blue-100 rounded px-1' 
-                            : ''
-                        }`}
-                        onClick={() => !isEmpty && piece && handleEatResource(piece.id, 'berries')}
-                      >
-                        <span>🫐</span>
-                        <span className="text-xs">{isEmpty ? 0 : piece.resources.berries}</span>
+                      <div className="space-y-0.5">
+                        <div className="flex items-center justify-between">
+                          <span>🫐</span>
+                          <span className="text-xs">{isEmpty ? 0 : piece.resources.berries}</span>
+                        </div>
+                        {isCurrentPlayer && turnPhase === 'eat' && !isEmpty && piece && piece.resources.berries > 0 && (
+                          <div className="grid grid-cols-2 gap-0.5">
+                            <button
+                              onClick={() => handleEatResource(piece.id, 'berries', 'energy')}
+                              className="text-xs bg-yellow-100 hover:bg-yellow-200 rounded px-1 py-0.5"
+                              title="2 energy"
+                            >
+                              ⚡
+                            </button>
+                            <button
+                              onClick={() => handleEatResource(piece.id, 'berries', 'fat')}
+                              className="text-xs bg-orange-100 hover:bg-orange-200 rounded px-1 py-0.5"
+                              title="2 fat"
+                            >
+                              🟫
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      <div 
-                        className={`flex items-center justify-between ${
-                          isCurrentPlayer && turnPhase === 'eat' && !isEmpty && piece.resources.salmon > 0
-                            ? 'cursor-pointer hover:bg-red-100 rounded px-1' 
-                            : ''
-                        }`}
-                        onClick={() => !isEmpty && piece && handleEatResource(piece.id, 'salmon')}
-                      >
-                        <span>🐟</span>
-                        <span className="text-xs">{isEmpty ? 0 : piece.resources.salmon}</span>
+                      <div className="space-y-0.5">
+                        <div className="flex items-center justify-between">
+                          <span>🐟</span>
+                          <span className="text-xs">{isEmpty ? 0 : piece.resources.salmon}</span>
+                        </div>
+                        {isCurrentPlayer && turnPhase === 'eat' && !isEmpty && piece && piece.resources.salmon > 0 && (
+                          <div className="grid grid-cols-2 gap-0.5">
+                            <button
+                              onClick={() => handleEatResource(piece.id, 'salmon', 'energy')}
+                              className="text-xs bg-yellow-100 hover:bg-yellow-200 rounded px-1 py-0.5"
+                              title="1 energy"
+                            >
+                              ⚡
+                            </button>
+                            <button
+                              onClick={() => handleEatResource(piece.id, 'salmon', 'fat')}
+                              className="text-xs bg-orange-100 hover:bg-orange-200 rounded px-1 py-0.5"
+                              title="4 fat"
+                            >
+                              🟫
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                     
-                    {/* Right column - Stomach & Energy */}
+                    {/* Right column - Energy & Fat */}
                     <div className="space-y-0.5">
-                      <div className="border rounded p-0.5 bg-orange-50">
-                        <div className="text-xs text-center">Stomach</div>
-                        <div className="text-xs text-center">
-                          {isEmpty ? 0 : (piece.stomach.grains + piece.stomach.berries + piece.stomach.salmon)}
-                        </div>
-                      </div>
                       <div className="border rounded p-0.5 bg-yellow-50">
                         <div className="text-xs text-center">Energy</div>
                         <div className="text-xs text-center">
                           ⚡{isEmpty ? 0 : piece.energy}
+                        </div>
+                      </div>
+                      <div className="border rounded p-0.5 bg-orange-50">
+                        <div className="text-xs text-center">Fat</div>
+                        <div className="text-xs text-center">
+                          🟫{isEmpty ? 0 : piece.fat}
                         </div>
                       </div>
                     </div>

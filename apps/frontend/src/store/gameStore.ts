@@ -40,11 +40,7 @@ export interface GamePiece {
     salmon: number
   }
   energy: number
-  stomach: {
-    grains: number
-    berries: number
-    salmon: number
-  }
+  fat: number
   isHibernating?: boolean
 }
 
@@ -71,7 +67,7 @@ export interface GameState {
   year: number
   turn: number
   gamePhase: 'setup' | 'playing' | 'ended'
-  turnPhase: 'eat' | 'movement' | 'harvest' | 'digestion' | 'hibernation'
+  turnPhase: 'movement' | 'harvest' | 'eat' | 'hibernation'
   
   // UI state (local only - not synced)
   selectedSpaceId: string | null
@@ -99,16 +95,14 @@ export interface GameState {
   transferEnergy: (fromPieceId: string, toPieceId: string, amount: number) => boolean
   
   // Turn phase actions
-  eatFood: (pieceId: string, resourceType: 'grains' | 'berries' | 'salmon', amount: number) => boolean
-  convertFoodToEnergy: (pieceId: string) => boolean
+  eatFood: (pieceId: string, resourceType: 'grains' | 'berries' | 'salmon', amount: number, convertTo: 'energy' | 'fat') => boolean
   loseTurnEnergy: (pieceId: string) => boolean
   hibernateBear: (pieceId: string) => boolean
   wakeHibernatingBears: () => void
   harvestResources: (pieceId: string) => boolean
   harvestAllPlayerResources: (playerId: string | number) => boolean
-  digestFood: (pieceId: string) => boolean
   nextTurnPhase: () => void
-  setTurnPhase: (phase: 'eat' | 'movement' | 'harvest' | 'digestion' | 'hibernation') => void
+  setTurnPhase: (phase: 'movement' | 'harvest' | 'eat' | 'hibernation') => void
   
   advanceSeason: () => void
   nextPlayer: () => void
@@ -136,10 +130,10 @@ let yjsProvider: WebsocketProvider | null = null
 let gameStateMap: Y.Map<unknown> | null = null
 
 const SEASONAL_PRODUCTION = {
-  Spring: { grains: 2, berries: 1, salmon: 3, energy: 1 },
-  Summer: { grains: 3, berries: 3, salmon: 2, energy: 2 },
+  Spring: { grains: 4, berries: 1, salmon: 0, energy: 1 },
+  Summer: { grains: 3, berries: 3, salmon: 0, energy: 2 },
   Autumn: { grains: 3, berries: 2, salmon: 1, energy: 3 },
-  Winter: { grains: 1, berries: 0, salmon: 1, energy: 0 }
+  Winter: { grains: 1, berries: 0, salmon: 0, energy: 0 }
 }
 
 // Helper functions for board creation
@@ -161,8 +155,8 @@ const createInitialBoard = (): Board => {
     rings[ring] = { spaceCount, radius }
     
     for (let position = 1; position <= spaceCount; position++) {
-      // Offset angle by half a space so boundaries fall between spaces, then rotate 45°
-      const angle = ((position - 0.5) / spaceCount) * 2 * Math.PI + Math.PI/4
+      // Offset angle by half a space so boundaries fall between spaces, then rotate 135° (-45°)
+      const angle = ((position - 0.5) / spaceCount) * 2 * Math.PI + 3*Math.PI/4
       const quadrant = getQuadrantFromAngle(angle)
       const spaceId = `R${ring}-${position}`
       
@@ -377,16 +371,16 @@ const getQuadrantFromAngle = (angle: number): GameSpace['quadrant'] => {
   // Normalize angle to 0-2π range
   const normalizedAngle = ((angle % (2 * Math.PI)) + (2 * Math.PI)) % (2 * Math.PI)
   
-  // Boundaries are at -45°, 45°, 135°, 225° (or 315°, 45°, 135°, 225°)
-  // Mountains: 315° to 45° (crossing 0°)
-  // Riverlands: 45° to 135°
-  // Forests: 135° to 225°
-  // Pastures: 225° to 315°
+  // After 90° rotation, boundaries are at -135°, -45°, 45°, 135° (or 225°, 315°, 45°, 135°)
+  // Mountains: 225° to 315° (or -135° to -45°)
+  // Riverlands: 315° to 45° (crossing 0°)  
+  // Forests: 45° to 135°
+  // Pastures: 135° to 225°
   
-  if (normalizedAngle >= 7*Math.PI/4 || normalizedAngle < Math.PI/4) return 'Mountains'  // 315° to 45°
-  if (normalizedAngle >= Math.PI/4 && normalizedAngle < 3*Math.PI/4) return 'Riverlands'  // 45° to 135°
-  if (normalizedAngle >= 3*Math.PI/4 && normalizedAngle < 5*Math.PI/4) return 'Forests'   // 135° to 225°
-  return 'Pastures'  // 225° to 315°
+  if (normalizedAngle >= 5*Math.PI/4 && normalizedAngle < 7*Math.PI/4) return 'Mountains'  // 225° to 315°
+  if (normalizedAngle >= 7*Math.PI/4 || normalizedAngle < Math.PI/4) return 'Riverlands'  // 315° to 45°
+  if (normalizedAngle >= Math.PI/4 && normalizedAngle < 3*Math.PI/4) return 'Forests'     // 45° to 135°
+  return 'Pastures'  // 135° to 225°
 }
 
 const getMountainSubArea = (ring: number): 'Caves' | 'Hunting Grounds' => {
@@ -423,7 +417,7 @@ export const useGameStore = create<GameState>()(
       year: 1,
       turn: 0,
       gamePhase: 'setup',
-      turnPhase: 'eat',
+      turnPhase: 'movement',
       selectedSpaceId: null,
       selectedPieceId: null,
       highlightedSpaces: [],
@@ -457,11 +451,7 @@ export const useGameStore = create<GameState>()(
             salmon: 0
           },
           energy: 5,
-          stomach: {
-            grains: 0,
-            berries: 0,
-            salmon: 0
-          }
+          fat: 0
         }
         newBoard.spaces[player1StartSpace].piece = p1Bear
         newPlayers[0].pieces.push(p1Bear)
@@ -480,11 +470,7 @@ export const useGameStore = create<GameState>()(
             salmon: 0
           },
           energy: 5,
-          stomach: {
-            grains: 0,
-            berries: 0,
-            salmon: 0
-          }
+          fat: 0
         }
         newBoard.spaces[player2StartSpace].piece = p2Bear
         newPlayers[1].pieces.push(p2Bear)
@@ -660,11 +646,7 @@ export const useGameStore = create<GameState>()(
             salmon: 2
           },
           energy: 3,
-          stomach: {
-            grains: 1,
-            berries: 1,
-            salmon: 1
-          }
+          fat: 0
         }
 
         set(state => ({
@@ -712,33 +694,21 @@ export const useGameStore = create<GameState>()(
           return false
         }
 
-        // Movement costs 1 energy (from stomach food or fat)
+        // Movement costs depend on fat level: 1 energy per space if ≤10 fat, 2 energy per space if >10 fat
         const currentPiece = oldSpace.piece!
-        const totalStomachFood = currentPiece.stomach.grains + currentPiece.stomach.berries + currentPiece.stomach.salmon
+        const movementCost = currentPiece.fat > 10 ? 2 : 1
         
         let energySource = ''
         const newResources = { ...currentPiece.resources }
-        const newStomach = { ...currentPiece.stomach }
         let newEnergy = currentPiece.energy
+        const newFat = currentPiece.fat
 
-        if (totalStomachFood > 0) {
-          // Use stomach food first (prefer salmon > berries > grains)
-          if (currentPiece.stomach.salmon > 0) {
-            newStomach.salmon -= 1
-            energySource = 'salmon from stomach'
-          } else if (currentPiece.stomach.berries > 0) {
-            newStomach.berries -= 1
-            energySource = 'berries from stomach'
-          } else {
-            newStomach.grains -= 1
-            energySource = 'grains from stomach'
-          }
-        } else if (currentPiece.energy > 0) {
+        if (currentPiece.energy >= movementCost) {
           // Use energy reserves
-          newEnergy -= 1
-          energySource = 'energy reserves'
+          newEnergy -= movementCost
+          energySource = `${movementCost} energy (${currentPiece.fat > 10 ? 'heavy' : 'light'})`
         } else {
-          get().addToLog('Bear has no energy to move!')
+          get().addToLog(`Bear has insufficient energy to move! Needs ${movementCost}, has ${currentPiece.energy}`)
           return false
         }
 
@@ -755,8 +725,8 @@ export const useGameStore = create<GameState>()(
                   ...piece, 
                   spaceId: newSpaceId,
                   resources: newResources,
-                  stomach: newStomach,
-                  energy: newEnergy
+                  energy: newEnergy,
+                  fat: newFat
                 } 
               }
             }
@@ -768,8 +738,8 @@ export const useGameStore = create<GameState>()(
                 ...piece, 
                 spaceId: newSpaceId,
                 resources: newResources,
-                stomach: newStomach,
-                energy: newEnergy
+                energy: newEnergy,
+                fat: newFat
               } : piece
             )
           }))
@@ -870,7 +840,7 @@ export const useGameStore = create<GameState>()(
       },
 
       // Turn phase functions
-      eatFood: (pieceId, resourceType, amount) => {
+      eatFood: (pieceId, resourceType, amount, convertTo) => {
         const state = get()
         
         // Find the piece
@@ -886,7 +856,19 @@ export const useGameStore = create<GameState>()(
           return false
         }
 
-        // Move resources from storage to stomach
+        // Calculate conversion based on food type and destination
+        let conversionAmount = 0
+        if (convertTo === 'energy') {
+          // Energy conversion rates: Grain=3, Berries=2, Salmon=1 energy per unit
+          const energyRates = { grains: 3, berries: 2, salmon: 1 }
+          conversionAmount = amount * energyRates[resourceType]
+        } else {
+          // Fat conversion rates: Grain=1, Berries=2, Salmon=4 fat per unit
+          const fatRates = { grains: 1, berries: 2, salmon: 4 }
+          conversionAmount = amount * fatRates[resourceType]
+        }
+
+        // Update pieces with direct conversion
         const updatedSpaces = { ...state.board.spaces }
         
         Object.values(state.board.spaces).forEach(s => {
@@ -899,10 +881,8 @@ export const useGameStore = create<GameState>()(
                   ...s.piece.resources,
                   [resourceType]: s.piece.resources[resourceType] - amount
                 },
-                stomach: {
-                  ...s.piece.stomach,
-                  [resourceType]: s.piece.stomach[resourceType] + amount
-                }
+                energy: convertTo === 'energy' ? s.piece.energy + conversionAmount : s.piece.energy,
+                fat: convertTo === 'fat' ? s.piece.fat + conversionAmount : s.piece.fat
               }
             }
           }
@@ -924,10 +904,8 @@ export const useGameStore = create<GameState>()(
                     ...piece.resources,
                     [resourceType]: piece.resources[resourceType] - amount
                   },
-                  stomach: {
-                    ...piece.stomach,
-                    [resourceType]: piece.stomach[resourceType] + amount
-                  }
+                  energy: convertTo === 'energy' ? piece.energy + conversionAmount : piece.energy,
+                  fat: convertTo === 'fat' ? piece.fat + conversionAmount : piece.fat
                 }
               }
               return piece
@@ -935,7 +913,7 @@ export const useGameStore = create<GameState>()(
           }))
         }))
 
-        get().addToLog(`Bear ate ${amount} ${resourceType}`)
+        get().addToLog(`Bear ate ${amount} ${resourceType} → gained ${conversionAmount} ${convertTo}`)
         return true
       },
 
@@ -1114,74 +1092,6 @@ export const useGameStore = create<GameState>()(
         return bearsHarvested > 0
       },
 
-      digestFood: (pieceId) => {
-        const state = get()
-        const pieceSpace = Object.values(state.board.spaces).find(s => s.piece?.id === pieceId)
-        if (!pieceSpace?.piece) {
-          get().addToLog('Cannot find bear for digestion')
-          return false
-        }
-
-        const totalStomachFood = 
-          pieceSpace.piece.stomach.grains + 
-          pieceSpace.piece.stomach.berries + 
-          pieceSpace.piece.stomach.salmon
-
-        if (totalStomachFood === 0) {
-          get().addToLog('Bear has no food to digest')
-          return false
-        }
-
-        // Convert all stomach food to fat (1:1 ratio)
-        const updatedSpaces = { ...state.board.spaces }
-        
-        Object.values(state.board.spaces).forEach(s => {
-          if (s.piece?.id === pieceId) {
-            updatedSpaces[s.id] = {
-              ...s,
-              piece: {
-                ...s.piece,
-                resources: s.piece.resources,
-                energy: s.piece.energy + totalStomachFood,
-                stomach: {
-                  grains: 0,
-                  berries: 0,
-                  salmon: 0
-                }
-              }
-            }
-          }
-        })
-        
-        set(state => ({
-          ...state,
-          board: {
-            ...state.board,
-            spaces: updatedSpaces
-          },
-          players: state.players.map(p => ({
-            ...p,
-            pieces: p.pieces.map(piece => {
-              if (piece.id === pieceId) {
-                return {
-                  ...piece,
-                  resources: piece.resources,
-                  energy: piece.energy + totalStomachFood,
-                  stomach: {
-                    grains: 0,
-                    berries: 0,
-                    salmon: 0
-                  }
-                }
-              }
-              return piece
-            })
-          }))
-        }))
-
-        get().addToLog(`Bear digested ${totalStomachFood} food into energy`)
-        return true
-      },
 
       transferEnergy: (fromPieceId: string, toPieceId: string, amount: number) => {
         const state = get()
@@ -1232,79 +1142,6 @@ export const useGameStore = create<GameState>()(
         return true
       },
 
-      convertFoodToEnergy: (pieceId: string) => {
-        const state = get()
-        const space = Object.values(state.board.spaces).find(s => s.piece?.id === pieceId)
-        
-        if (!space?.piece) {
-          get().addToLog('Piece not found for food conversion')
-          return false
-        }
-        
-        const piece = space.piece
-        const totalStomachFood = piece.stomach.grains + piece.stomach.berries + piece.stomach.salmon
-        
-        if (totalStomachFood === 0) {
-          get().addToLog('No food in stomach to convert')
-          return false
-        }
-        
-        // Convert stomach food to energy using 2:1 ratio (2 food = 1 energy)
-        // Any leftover food is lost (not stored)
-        const energyGained = Math.floor(totalStomachFood / 2)
-        
-        set(state => ({
-          ...state,
-          board: {
-            ...state.board,
-            spaces: {
-              ...state.board.spaces,
-              [space.id]: {
-                ...space,
-                piece: {
-                  ...piece,
-                  energy: piece.energy + energyGained,
-                  stomach: {
-                    grains: 0,
-                    berries: 0,
-                    salmon: 0
-                  }
-                }
-              }
-            }
-          },
-          players: state.players.map(p => ({
-            ...p,
-            pieces: p.pieces.map(playerPiece => {
-              if (playerPiece.id === pieceId) {
-                return {
-                  ...playerPiece,
-                  energy: playerPiece.energy + energyGained,
-                  stomach: {
-                    grains: 0,
-                    berries: 0,
-                    salmon: 0
-                  }
-                }
-              }
-              return playerPiece
-            })
-          }))
-        }))
-        
-        const foodBreakdown = []
-        if (piece.stomach.grains > 0) foodBreakdown.push(`${piece.stomach.grains} 🌾`)
-        if (piece.stomach.berries > 0) foodBreakdown.push(`${piece.stomach.berries} 🫐`)
-        if (piece.stomach.salmon > 0) foodBreakdown.push(`${piece.stomach.salmon} 🐟`)
-        
-        const foodLost = totalStomachFood - (energyGained * 2)
-        const conversionDetails = foodLost > 0 
-          ? `${energyGained} energy (${foodLost} food lost in conversion)` 
-          : `${energyGained} energy`
-        
-        get().addToLog(`Bear digested ${totalStomachFood} food (${foodBreakdown.join(', ')}) → ${conversionDetails} ⚡`)
-        return true
-      },
 
       loseTurnEnergy: (pieceId: string) => {
         const state = get()
@@ -1461,7 +1298,7 @@ export const useGameStore = create<GameState>()(
                     type: 'cub' as const,
                     resources: { grains: 0, berries: 0, salmon: 0 },
                     energy: 3, // Cubs start with 3 energy
-                    stomach: { grains: 0, berries: 0, salmon: 0 }
+                    fat: 0
                   }
                   
                   // Place cub on board
@@ -1494,7 +1331,7 @@ export const useGameStore = create<GameState>()(
 
       nextTurnPhase: () => {
         const state = get()
-        const phases: GameState['turnPhase'][] = ['eat', 'movement', 'harvest', 'digestion']
+        const phases: GameState['turnPhase'][] = ['movement', 'harvest', 'eat']
         const currentIndex = phases.indexOf(state.turnPhase)
         const nextPhase = phases[(currentIndex + 1) % phases.length]
 
@@ -1511,7 +1348,7 @@ export const useGameStore = create<GameState>()(
         }
       },
 
-      setTurnPhase: (phase: 'eat' | 'movement' | 'harvest' | 'digestion') => {
+      setTurnPhase: (phase: 'eat' | 'movement' | 'harvest' | 'hibernation') => {
         set(state => ({
           ...state,
           turnPhase: phase
@@ -1624,7 +1461,7 @@ export const useGameStore = create<GameState>()(
           turn: newTurn,
           season: newSeason,
           year: newYear,
-          turnPhase: 'eat' // Reset to first phase for new player
+          turnPhase: 'movement' // Reset to first phase for new player
         }))
         
         // All bears lose 1 energy at the start of their turn (except hibernating bears)

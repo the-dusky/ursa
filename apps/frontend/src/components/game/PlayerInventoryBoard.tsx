@@ -15,12 +15,8 @@ interface BearInventoryProps {
     berries: number
     salmon: number
   }
-  stomach: {
-    grains: number
-    berries: number
-    salmon: number
-  }
   energy: number
+  fat: number
 }
 
 const ResourceToken = ({ type, count }: { type: 'grains' | 'berries' | 'salmon', count: number }) => {
@@ -49,7 +45,7 @@ const EnergyToken = ({ count }: { count: number }) => {
   )
 }
 
-const BearInventory = ({ bearId, bearType, resources, stomach, energy }: BearInventoryProps) => {
+const BearInventory = ({ bearId, bearType, resources, energy, fat }: BearInventoryProps) => {
   return (
     <div className="flex items-center space-x-4 p-4 border-2 border-gray-300 rounded-lg bg-white">
       {/* Basket - to the side */}
@@ -75,14 +71,10 @@ const BearInventory = ({ bearId, bearType, resources, stomach, energy }: BearInv
               <EnergyToken count={energy} />
             </div>
             
-            {/* Stomach area (inner) */}
-            <div className="w-16 h-16 rounded-full border-2 border-red-400 bg-red-50 flex items-center justify-center">
+            {/* Fat area (inner) */}
+            <div className="w-16 h-16 rounded-full border-2 border-orange-400 bg-orange-50 flex items-center justify-center">
               <div className="flex flex-col items-center space-y-1">
-                <div className="flex space-x-1">
-                  <ResourceToken type="grains" count={stomach.grains} />
-                  <ResourceToken type="berries" count={stomach.berries} />
-                  <ResourceToken type="salmon" count={stomach.salmon} />
-                </div>
+                <div className="text-sm font-bold text-orange-700">🟫{fat}</div>
               </div>
             </div>
           </div>
@@ -120,8 +112,8 @@ export const PlayerInventoryBoard = ({ playerId }: PlayerInventoryBoardProps) =>
             bearId={piece.id}
             bearType={piece.type}
             resources={piece.resources}
-            stomach={piece.stomach}
             energy={piece.energy}
+            fat={piece.fat}
           />
         ))}
         
