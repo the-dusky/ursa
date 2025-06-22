@@ -19,8 +19,8 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
     harvestAllPlayerResources
   } = useGameStore()
   
-  const player = players.find(p => p.id === playerId)
-  const isCurrentPlayer = player && players[currentPlayerIndex]?.id === playerId
+  const player = players.find(p => String(p.id) === playerId)
+  const isCurrentPlayer = player && String(players[currentPlayerIndex]?.id) === playerId
   
   if (!player || player.id === 'bears') return null
 

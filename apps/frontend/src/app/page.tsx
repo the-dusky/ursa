@@ -11,12 +11,11 @@ import { SeasonIndicator } from '@/components/game/SeasonIndicator'
 import { GameLog } from '@/components/game/GameLog'
 import { MultiplayerControls } from '@/components/game/MultiplayerControls'
 import { RulesDialog } from '@/components/game/RulesDialog'
-import { PlayerInventoryBoard } from '@/components/game/PlayerInventoryBoard'
 import { useGameStore } from '@/store/gameStore'
 import { useEffect } from 'react'
 
 export default function Home() {
-  const { initializeGame, gamePhase, currentPlayerIndex, players } = useGameStore()
+  const { initializeGame, gamePhase, players } = useGameStore()
 
   useEffect(() => {
     if (gamePhase === 'setup') {
@@ -63,12 +62,6 @@ export default function Home() {
           </aside>
         </div>
 
-        {/* Player Inventory Board */}
-        {players.length > 0 && (
-          <div className="mt-8">
-            <PlayerInventoryBoard playerId={players[currentPlayerIndex]?.id || players[0]?.id} />
-          </div>
-        )}
 
         {/* Rules Dialog */}
         <RulesDialog />
