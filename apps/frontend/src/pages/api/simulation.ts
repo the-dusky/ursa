@@ -5,6 +5,7 @@
 
 import { NextApiRequest, NextApiResponse } from 'next'
 import { runQuickTest } from '../../simulation/test-runner'
+import { BatchResults } from '../../simulation/BatchRunner'
 
 export default async function handler(
   req: NextApiRequest,
@@ -61,11 +62,11 @@ export default async function handler(
   }
 }
 
-function generateInsights(results: any): string[] {
+function generateInsights(results: BatchResults): string[] {
   const insights: string[] = []
   
   // Strategy balance check
-  const winRates = Object.values(results.strategyWinRates) as number[]
+  const winRates = Object.values(results.strategyWinRates)
   const maxWinRate = Math.max(...winRates)
   const minWinRate = Math.min(...winRates)
   const spread = maxWinRate - minWinRate

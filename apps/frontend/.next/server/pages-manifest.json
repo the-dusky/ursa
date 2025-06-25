@@ -1,6 +1,9 @@
 {
   "/_app": "pages/_app.js",
+  "/api/simulation": "pages/api/simulation.js",
+  "/api/debug-game": "pages/api/debug-game.js",
   "/_error": "pages/_error.js",
+  "/test-simulation": "pages/test-simulation.html",
   "/_document": "pages/_document.js",
   "/404": "pages/404.html"
 }

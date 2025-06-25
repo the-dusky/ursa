@@ -4,16 +4,12 @@ import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import {
   executeEatFood,
-  executeMovement,
   executeDailyEnergyTax,
   convertFatToEmergencyEnergy,
-  executeHibernation,
   executeHarvest,
-  executeFight,
   DEFAULT_CONFIG,
   SEASONAL_PRODUCTION,
   EMERGENCY_CONVERSION,
-  type ResourceType
 } from '../shared/gameRules'
 
 // Types (same as before)
@@ -1039,7 +1035,20 @@ export const useGameStore = create<GameState>()(
           board: {
             ...state.board,
             spaces: updatedSpaces
-          }
+          },
+          players: state.players.map(p => {
+            if (p.id === currentPlayer.id) {
+              return {
+                ...p,
+                pieces: p.pieces.map(piece => {
+                  // Find the updated piece in the board spaces
+                  const updatedSpace = Object.values(updatedSpaces).find(s => s.piece?.id === piece.id)
+                  return updatedSpace?.piece || piece
+                })
+              }
+            }
+            return p
+          })
         }))
 
         get().addToLog('💰 Energy tax paid for all bears')
@@ -1176,7 +1185,20 @@ export const useGameStore = create<GameState>()(
           board: {
             ...state.board,
             spaces: updatedSpaces
-          }
+          },
+          players: state.players.map(p => {
+            if (String(p.id) === String(playerId)) {
+              return {
+                ...p,
+                pieces: p.pieces.map(piece => {
+                  // Find the updated piece in the board spaces
+                  const updatedSpace = Object.values(updatedSpaces).find(s => s.piece?.id === piece.id)
+                  return updatedSpace?.piece || piece
+                })
+              }
+            }
+            return p
+          })
         }))
 
         if (bearsHarvested > 0) {
@@ -1273,7 +1295,7 @@ export const useGameStore = create<GameState>()(
         const totalEnergyAfterLoss = Math.max(0, totalEnergy - energyLoss)
         
         // Distribute remaining energy (regular energy first, then emergency)
-        let newRegularEnergy = Math.min(piece.energy, totalEnergyAfterLoss)
+        const newRegularEnergy = Math.min(piece.energy, totalEnergyAfterLoss)
         let newEmergencyEnergy = Math.max(0, totalEnergyAfterLoss - newRegularEnergy)
         
         // Emergency energy is lost at end of turn regardless
@@ -1920,7 +1942,7 @@ export const useGameStore = create<GameState>()(
           if (!space.piece || !space.canProduce) return
 
           const newResources = { ...space.piece.resources }
-          let newEnergy = space.piece.energy
+          const newEnergy = space.piece.energy
           
           switch (space.quadrant) {
             case 'Pastures':
@@ -1960,7 +1982,7 @@ export const useGameStore = create<GameState>()(
               if (!space?.canProduce) return piece
 
               const newResources = { ...piece.resources }
-              let newEnergy = piece.energy
+              const newEnergy = piece.energy
               
               switch (space.quadrant) {
                 case 'Pastures':

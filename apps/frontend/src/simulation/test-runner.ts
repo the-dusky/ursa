@@ -5,7 +5,7 @@
  */
 
 import { BatchRunner, BatchConfig } from './BatchRunner'
-import { AIStrategy } from './GameSimulator'
+import { SimulationProgress } from './SimulationVisualizer'
 
 /**
  * Run a quick balance test
@@ -23,7 +23,7 @@ async function runQuickTest() {
   }
   
   // Add progress callback for console visualization
-  const progressCallback = (progress: any) => {
+  const progressCallback = (progress: SimulationProgress) => {
     if (progress.completedGames % 10 === 0) {
       console.log(`\r⏳ Progress: ${progress.completedGames}/${progress.totalGames} games completed`)
     }
@@ -51,7 +51,8 @@ async function runQuickTest() {
 async function runParameterComparison() {
   console.log('🔬 Testing different parameter sets...')
   
-  const testConfigs = [
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _testConfigs = [
     {
       name: 'Current Settings',
       // This would use current game parameters
@@ -114,7 +115,8 @@ async function main() {
     console.log('🚀 Bears Game Balance Tester')
     console.log('============================\n')
     
-    const results = await runParameterComparison()
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const _results = await runParameterComparison()
     
     console.log('\n🎯 NEXT STEPS:')
     console.log('1. Review the recommendations above')

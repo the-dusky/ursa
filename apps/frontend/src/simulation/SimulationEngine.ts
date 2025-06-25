@@ -10,22 +10,18 @@
  * Now uses the shared rules engine to ensure identical mechanics with main game.
  */
 
-import { AIPlayer, AIStrategy, GameStatistics } from './GameSimulator'
+import { AIPlayer, AIStrategy, GameStatistics, AIDecision } from './GameSimulator'
 import { createInitialGameState, SimulationGameState } from './GameStateFactory'
 import {
   executeEatFood,
   executeMovement,
-  executeTurnEnergyLoss,
   executeDailyEnergyTax,
   convertFatToEmergencyEnergy,
   executeHibernation,
   executeHarvest,
-  executeFight,
-  SEASONAL_PRODUCTION,
   DEFAULT_CONFIG,
   EMERGENCY_CONVERSION,
   type ResourceType,
-  type Season
 } from '../shared/gameRules'
 
 export interface SimulationConfig {
@@ -121,7 +117,7 @@ export class SimulationEngine {
    * Execute an AI player's decision
    * This modifies the game state based on what the AI chose
    */
-  private async executeDecision(player: AIPlayer, decision: any) {
+  private async executeDecision(player: AIPlayer, decision: AIDecision) {
     switch (decision.type) {
       case 'movement_phase':
         // Execute fat burning first (to get energy for movement)

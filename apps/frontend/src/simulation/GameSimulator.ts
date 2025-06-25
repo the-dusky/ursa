@@ -505,7 +505,7 @@ interface MovementPhaseDecision {
   movements: MoveDecision[]
 }
 
-type AIDecision = 
+export type AIDecision = 
   | { type: 'continue' }
   | { type: 'movement_phase'; actions: MovementPhaseDecision }
   | { type: 'eat'; eatDecisions: EatDecision[] }

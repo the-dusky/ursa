@@ -4,6 +4,7 @@
 
 import { NextApiRequest, NextApiResponse } from 'next'
 import { debugSingleGame } from '../../simulation/debug-single-game'
+import { GameStatistics } from '../../simulation/GameSimulator'
 
 export default async function handler(
   req: NextApiRequest,
@@ -39,19 +40,19 @@ export default async function handler(
   }
 }
 
-function checkForIdenticalPatterns(result: any) {
+function checkForIdenticalPatterns(result: GameStatistics) {
   return {
     concern: 'Are games too deterministic?',
     evidence: [
       `Game lasted exactly ${result.turns} turns`,
-      `Eliminated players at specific turns: ${result.playerEliminations.map((e: any) => e.turn).join(', ')}`,
+      `Eliminated players at specific turns: ${result.playerEliminations.map(e => e.turn).join(', ')}`,
       `Resource collection seems consistent`
     ],
     recommendation: 'Run multiple debug games to see if results vary'
   }
 }
 
-function checkAIVariety(result: any) {
+function checkAIVariety(result: GameStatistics) {
   const strategies = Object.keys(result.strategyPerformance || {})
   return {
     concern: 'Are different AI strategies actually behaving differently?',
@@ -63,7 +64,7 @@ function checkAIVariety(result: any) {
   }
 }
 
-function checkResourceFlow(result: any) {
+function checkResourceFlow(result: GameStatistics) {
   const collected = result.resourcesCollected
   const consumed = result.resourcesConsumed
   
@@ -79,7 +80,7 @@ function checkResourceFlow(result: any) {
   }
 }
 
-function checkSurvivalIssues(result: any) {
+function checkSurvivalIssues(result: GameStatistics) {
   return {
     concern: 'Why are bears dying so quickly?',
     evidence: [

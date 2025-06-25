@@ -6,7 +6,7 @@
  * This ensures both systems use identical rules.
  */
 
-import type { GameSpace, GamePiece, Board } from '../store/gameStore'
+import type { GameSpace, GamePiece } from '../store/gameStore'
 
 // Types for the rules engine
 export type ResourceType = 'grains' | 'berries' | 'salmon' | 'honey' | 'bearMeat'
@@ -75,7 +75,8 @@ export function calculateMovementCost(
   piece: GamePiece, 
   season: Season, 
   fromQuadrant: string,
-  config: GameRulesConfig = DEFAULT_CONFIG
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _config: GameRulesConfig = DEFAULT_CONFIG
 ): number {
   const baseCost = MOVEMENT_COSTS.baseCost(piece.fat)
   
@@ -94,7 +95,8 @@ export function calculateEnergyLoss(
   piece: GamePiece,
   season: Season,
   quadrant: string,
-  config: GameRulesConfig = DEFAULT_CONFIG
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _config: GameRulesConfig = DEFAULT_CONFIG
 ): number {
   if (season === 'Winter') {
     const isInMountains = quadrant === 'Mountains'
@@ -253,7 +255,8 @@ export function executeTurnEnergyLoss(
   piece: GamePiece,
   season: Season,
   quadrant: string,
-  config: GameRulesConfig = DEFAULT_CONFIG
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _config: GameRulesConfig = DEFAULT_CONFIG
 ): { newPiece: GamePiece; message: string } {
   
   // Emergency energy is lost at end of turn regardless
@@ -357,7 +360,8 @@ export function executeHarvest(
   piece: GamePiece,
   space: GameSpace,
   season: Season,
-  config: GameRulesConfig = DEFAULT_CONFIG
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _config: GameRulesConfig = DEFAULT_CONFIG
 ): { newPiece: GamePiece; harvested: { [key in ResourceType]: number }; message: string } {
   
   if (!space.canProduce) {
@@ -398,7 +402,7 @@ export function executeHarvest(
   }
 
   const harvestedItems = Object.entries(harvested)
-    .filter(([_, amount]) => amount > 0)
+    .filter(([, amount]) => amount > 0)
     .map(([resource, amount]) => `${amount} ${resource}`)
     .join(', ')
 
