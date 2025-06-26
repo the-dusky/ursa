@@ -126,7 +126,7 @@ export const GAME_CONFIG: GameConfig = {
       },
       other: 1
     },
-    emergencyConversion: 2,  // 1 fat = 2 emergency energy
+    emergencyConversion: 0.5,  // 2 fat = 1 emergency energy
     maxFatConversionPerTurn: 5  // Maximum fat that can be auto-converted per turn
   },
   combat: {

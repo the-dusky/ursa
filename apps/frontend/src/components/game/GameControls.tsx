@@ -29,6 +29,7 @@ export function GameControls() {
   const selectedSpace = selectedSpaceId ? board.spaces[selectedSpaceId] : null
   const selectedPiece = selectedSpace?.piece
   const canMoveSelectedPiece = selectedPiece && selectedPiece.playerId === currentPlayer?.id
+  
 
   // Simplified - these actions are now handled through the new architecture
   const handleHighlightMoves = () => {

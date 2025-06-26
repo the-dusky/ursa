@@ -94,18 +94,6 @@ export function GameBoard() {
         </text>
 
 
-        {/* Mountain/Pasture Boundary Line (Position 0 Reference) */}
-        <line
-          x1={centerX}
-          y1={centerY}
-          x2={centerX + Math.cos(3 * Math.PI / 4) * 395}
-          y2={centerY + Math.sin(3 * Math.PI / 4) * 395}
-          stroke="#eab308"
-          strokeWidth="2"
-          strokeDasharray="4,4"
-          opacity="0.6"
-        />
-
 
         {/* Space Numbers for Ring 5 (outermost) */}
         {(() => {

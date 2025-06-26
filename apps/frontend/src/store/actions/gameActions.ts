@@ -252,6 +252,7 @@ export const useGameActions = () => {
       const action = ActionCreators.emergencyEnergy(currentPlayer.id, pieceId, fatAmount)
       
       const result = gameEngine.executeEmergencyEnergy(currentState, action)
+      
       return applyEngineResult(result)
     },
 
@@ -297,6 +298,19 @@ export const useGameActions = () => {
         default:
           return false
       }
+    },
+
+    /**
+     * Kill a bear due to starvation
+     */
+    death: (pieceId: string): boolean => {
+      const currentState = convertToEngineState()
+      const currentPlayer = currentState.players[currentState.currentPlayerIndex]
+      
+      const action = ActionCreators.death(currentPlayer.id, pieceId)
+      
+      const result = gameEngine.executeDeath(currentState, action)
+      return applyEngineResult(result)
     },
 
     /**

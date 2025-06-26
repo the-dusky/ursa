@@ -184,7 +184,7 @@ export const RulesReferenceCard: React.FC = () => {
         <div className="text-xs bg-orange-50 dark:bg-orange-900 p-2 rounded border-l-2 border-orange-400">
           <div className="flex items-center justify-between mb-1">
             <span>Conversion:</span>
-            <span className="font-mono">🟡1 fat → ⚡2 energy</span>
+            <span className="font-mono">🟡2 fat → ⚡1 energy</span>
           </div>
           <div className="flex items-center justify-between mb-1">
             <span>When:</span>

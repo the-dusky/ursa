@@ -180,14 +180,6 @@ function createInitialPlayers(): Player[] {
       pieces: [],
       pieceCount: { bears: 0, cubs: 0, maxBears: 3, maxCubs: 6 },
       score: 0
-    },
-    {
-      id: 2,
-      name: 'Player 2',
-      color: '#2F4F4F',
-      pieces: [],
-      pieceCount: { bears: 0, cubs: 0, maxBears: 3, maxCubs: 6 },
-      score: 0
     }
   ]
 }
@@ -374,9 +366,55 @@ export const useGameStore = create<CleanGameState>()(
       // Board management - delegate to BoardFactory
       updateBoardRotations: (rotations: number[]) => {
         console.log('Updating board with rotations:', rotations)
+        const newBoard = createInitialBoard(rotations)
+        const newPlayers = createInitialPlayers()
+        
+        // Randomly place each player's starting bear
+        const availableSpaces = Object.values(newBoard.spaces).filter(space => 
+          space.ring >= 2 && space.ring <= 4 && space.canProduce
+        )
+        
+        if (availableSpaces.length >= newPlayers.length) {
+          // Shuffle available spaces to get random placement
+          const shuffledSpaces = [...availableSpaces].sort(() => Math.random() - 0.5)
+          
+          newPlayers.forEach((player, playerIndex) => {
+            if (playerIndex < shuffledSpaces.length) {
+              const selectedSpace = shuffledSpaces[playerIndex]
+              
+              // Create starting bear for this player
+              const startingBear: GamePiece = {
+                id: `bear-${player.id}-1`,
+                playerId: player.id,
+                spaceId: selectedSpace.id,
+                type: 'bear',
+                health: 10,
+                resources: {
+                  grains: 0,
+                  berries: 0,
+                  salmon: 0,
+                  honey: 0,
+                  bearMeat: 0
+                },
+                energy: 5,
+                fat: 0,
+                emergencyEnergy: 0,
+                isHibernating: false
+              }
+              
+              // Add bear to player's piece list
+              player.pieces.push(startingBear)
+              player.pieceCount.bears = 1
+              
+              // Place bear on the selected space in the board
+              newBoard.spaces[selectedSpace.id].piece = startingBear
+            }
+          })
+        }
+        
         set({
-          board: createInitialBoard(rotations),
-          players: createInitialPlayers(),
+          board: newBoard,
+          players: newPlayers,
           currentPlayerIndex: 0,
           season: 'Spring',
           year: 1,

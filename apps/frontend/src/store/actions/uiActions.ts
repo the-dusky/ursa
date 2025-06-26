@@ -7,6 +7,7 @@
 
 import { useUIStore } from '../uiStore'
 import { useGameActions } from './gameActions'
+import { useGameStore } from '../gameStore'
 
 /**
  * UI Action Creators - Higher-level UI patterns
@@ -35,14 +36,30 @@ export const useUIActions = () => {
      */
     selectSpace: (spaceId: string) => {
       const selectedPieceId = uiStore.selectedPieceId
+      const gameState = useGameStore.getState()
+      
+      // Get the space being clicked
+      const clickedSpace = gameState.board.spaces[spaceId] || gameState.board.bridges[spaceId]
+      const currentPlayer = gameState.players[gameState.currentPlayerIndex]
+      
+      
+      // If the space contains a piece belonging to current player, select that piece
+      if (clickedSpace?.piece && clickedSpace.piece.playerId === currentPlayer?.id) {
+        uiStore.setSelectedPiece(clickedSpace.piece.id)
+        
+        // Get valid moves and highlight them
+        const validMoves = gameActions.getValidMoves(clickedSpace.piece.id)
+        uiStore.setHighlightedSpaces(validMoves)
+        
+        // Clear space selection since we're selecting a piece
+        uiStore.setSelectedSpace(null)
+        return
+      }
       
       // If we have a piece selected and this space is highlighted (valid move)
       if (selectedPieceId && uiStore.highlightedSpaces.includes(spaceId)) {
         // Find the piece's current space
-        // Get the current game state to find piece location
-        // This will be cleaner once we refactor gameStore.ts
-        const gameStore = (window as { __gameStore?: { players?: { pieces: { id: string; spaceId: string }[] }[] } }).__gameStore || {}
-        const piece = gameStore.players?.flatMap(p => p.pieces)?.find(p => p.id === selectedPieceId)
+        const piece = gameState.players.flatMap(p => p.pieces).find(p => p.id === selectedPieceId)
         
         if (piece) {
           const success = gameActions.movePiece(selectedPieceId, piece.spaceId, spaceId)
@@ -102,13 +119,13 @@ export const useUIActions = () => {
     },
 
     /**
-     * Handle energy tax payment with UI feedback
+     * Handle daily energy expense payment with UI feedback
      */
     payEnergyTaxWithFeedback: (pieceId: string) => {
       const success = gameActions.payEnergyTax(pieceId)
       
       if (success) {
-        uiStore.addLogMessage('Energy tax paid')
+        uiStore.addLogMessage('⚡ Daily energy expense paid')
       }
       
       return success
@@ -122,6 +139,21 @@ export const useUIActions = () => {
       
       if (success) {
         uiStore.addLogMessage(`Converted ${fatAmount} fat to emergency energy`)
+      }
+      
+      return success
+    },
+
+    /**
+     * Handle bear death with UI feedback
+     */
+    deathWithFeedback: (pieceId: string) => {
+      const success = gameActions.death(pieceId)
+      
+      if (success) {
+        uiStore.addLogMessage('💀 Bear died of starvation')
+        // Clear selections since the bear is dead
+        uiStore.clearSelections()
       }
       
       return success
@@ -218,6 +250,7 @@ export const useUIInteractions = () => {
     onHarvest: uiActions.harvestWithFeedback,
     onPayTax: uiActions.payEnergyTaxWithFeedback,
     onConvertFat: uiActions.convertFatWithFeedback,
+    onDeath: uiActions.deathWithFeedback,
     
     // Turn management
     onAdvanceTurn: uiActions.advanceTurnWithCleanup,

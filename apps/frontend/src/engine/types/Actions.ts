@@ -57,6 +57,11 @@ export interface PhaseAdvancementAction extends BaseAction {
   type: 'phase_advancement'
 }
 
+export interface DeathAction extends BaseAction {
+  type: 'death'
+  pieceId: string
+}
+
 /**
  * Union type of all possible game actions
  */
@@ -69,6 +74,7 @@ export type GameAction =
   | EmergencyEnergyAction
   | TurnAdvancementAction
   | PhaseAdvancementAction
+  | DeathAction
 
 /**
  * Action creators - helper functions to create properly typed actions
@@ -125,5 +131,11 @@ export const ActionCreators = {
   phaseAdvancement: (playerId: string | number): PhaseAdvancementAction => ({
     type: 'phase_advancement',
     playerId
+  }),
+
+  death: (playerId: string | number, pieceId: string): DeathAction => ({
+    type: 'death',
+    playerId,
+    pieceId
   })
 }

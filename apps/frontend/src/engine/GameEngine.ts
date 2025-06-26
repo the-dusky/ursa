@@ -22,8 +22,9 @@ import type {
   HibernationAction,
   HarvestAction,
   EnergyTaxAction,
-  EmergencyEnergyAction
-} from './types'
+  EmergencyEnergyAction,
+  DeathAction
+} from './types/Actions'
 import type { GameConfig } from './types'
 import { GAME_CONFIG } from './GameConfig'
 
@@ -47,6 +48,8 @@ export class GameEngine {
         return this.executeEnergyTax(state, action)
       case 'emergency_energy':
         return this.executeEmergencyEnergy(state, action)
+      case 'death':
+        return this.executeDeath(state, action)
       case 'turn_advancement':
         return this.executeTurnAdvancement(state)
       case 'phase_advancement':
@@ -280,7 +283,7 @@ export class GameEngine {
   }
 
   /**
-   * Execute energy tax action
+   * Execute daily energy expense action
    */
   executeEnergyTax(state: CoreGameState, action: EnergyTaxAction): GameResult<CoreGameState> {
     const piece = this.findPiece(state, action.pieceId)
@@ -302,7 +305,7 @@ export class GameEngine {
       return {
         success: false,
         state,
-        error: `Cannot pay energy tax: need ${energyLoss}, have ${totalEnergy}`
+        error: `Cannot pay daily energy expense: need ${energyLoss}, have ${totalEnergy}`
       }
     }
 
@@ -327,7 +330,7 @@ export class GameEngine {
     return {
       success: true,
       state: { ...this.updatePieceInState(state, updatedPiece), energyTaxPaid: true },
-      message: `Paid ${energyLoss} energy tax`
+      message: `Paid ${energyLoss} daily energy expense`
     }
   }
 
@@ -349,7 +352,7 @@ export class GameEngine {
       }
     }
 
-    const emergencyEnergyGained = action.fatAmount * this.config.energy.emergencyConversion
+    const emergencyEnergyGained = Math.floor(action.fatAmount * this.config.energy.emergencyConversion)
 
     const updatedPiece: CoreGamePiece = {
       ...piece,
@@ -365,13 +368,59 @@ export class GameEngine {
   }
 
   /**
+   * Execute death action
+   */
+  executeDeath(state: CoreGameState, action: DeathAction): GameResult<CoreGameState> {
+    const piece = this.findPiece(state, action.pieceId)
+    
+    if (!piece) {
+      return { success: false, state, error: 'Piece not found' }
+    }
+
+    // Remove piece from player's pieces list
+    const newState: CoreGameState = {
+      ...state,
+      players: state.players.map(player => ({
+        ...player,
+        pieces: player.pieces.filter(p => p.id !== action.pieceId),
+        pieceCount: {
+          ...player.pieceCount,
+          bears: player.pieces.filter(p => p.id !== action.pieceId && p.type === 'bear').length,
+          cubs: player.pieces.filter(p => p.id !== action.pieceId && p.type === 'cub').length
+        }
+      })),
+      board: {
+        ...state.board,
+        spaces: Object.fromEntries(
+          Object.entries(state.board.spaces).map(([spaceId, space]) => [
+            spaceId,
+            space.piece?.id === action.pieceId ? 
+              { ...space, piece: null } : 
+              space
+          ])
+        )
+      }
+    }
+
+    return {
+      success: true,
+      state: newState,
+      message: `Bear ${action.pieceId} died of starvation`
+    }
+  }
+
+  /**
    * Execute turn advancement
    */
   executeTurnAdvancement(state: CoreGameState): GameResult<CoreGameState> {
     // Clear emergency energy for all pieces
     const clearedState = this.clearEmergencyEnergy(state)
     
-    let newState = { ...clearedState, energyTaxPaid: false }
+    let newState: CoreGameState = { 
+      ...clearedState, 
+      energyTaxPaid: false, 
+      turnPhase: 'movement'
+    }
     
     // Advance turn
     newState.turn += 1
