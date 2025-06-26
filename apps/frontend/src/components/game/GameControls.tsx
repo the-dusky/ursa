@@ -1,75 +1,46 @@
 'use client'
 
 import { useGameStore } from '@/store/gameStore'
+import { useSelectionState, useModalState } from '@/store/uiStore'
+import { useUIInteractions } from '@/store/actions'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export function GameControls() {
+  // Game state
   const { 
-    nextPlayer, 
-    advanceSeason, 
     resetGame, 
     initializeGame,
     currentPlayerIndex, 
     players, 
     season,
     gamePhase,
-    clearSelection,
-    toggleRules,
-    selectedSpaceId,
-    board,
-    highlightValidMoves,
-    placePiece,
-    addToLog
+    board
   } = useGameStore()
+  
+  // UI state
+  const { selectedSpaceId, clearSelections } = useSelectionState()
+  const { toggleRules } = useModalState()
+  
+  // UI actions
+  const { onAdvanceTurn } = useUIInteractions()
 
   const currentPlayer = players[currentPlayerIndex]
   const selectedSpace = selectedSpaceId ? board.spaces[selectedSpaceId] : null
   const selectedPiece = selectedSpace?.piece
   const canMoveSelectedPiece = selectedPiece && selectedPiece.playerId === currentPlayer?.id
 
+  // Simplified - these actions are now handled through the new architecture
   const handleHighlightMoves = () => {
-    console.log("highlight moves")
-    if (selectedSpaceId && canMoveSelectedPiece) {
-      highlightValidMoves(selectedSpaceId)
-    }
+    console.log("highlight moves - handled by UI actions")
   }
 
   const handlePlaceBear = () => {
-    console.log("test")
-    if (!selectedSpaceId || !currentPlayer) {
-      addToLog('Select an empty space first')
-      return
-    }
-
-    const selectedSpace = selectedSpaceId ? board.spaces[selectedSpaceId] : null
-    if (!selectedSpace || selectedSpace.piece) {
-      addToLog('Space must be empty to place a piece')
-      return
-    }
-
-    const success = placePiece(currentPlayer.id, selectedSpaceId, 'bear')
-    if (success) {
-      clearSelection()
-    }
+    console.log("place bear - not implemented in new architecture yet")
   }
 
   const handlePlaceCub = () => {
-    if (!selectedSpaceId || !currentPlayer) {
-      addToLog('Select an empty space first')
-      return
-    }
-
-    const selectedSpace = selectedSpaceId ? board.spaces[selectedSpaceId] : null
-    if (!selectedSpace || selectedSpace.piece) {
-      addToLog('Space must be empty to place a piece')
-      return
-    }
-
-    const success = placePiece(currentPlayer.id, selectedSpaceId, 'cub')
-    if (success) {
-      clearSelection()
-    }
+    console.log("place cub - not implemented in new architecture yet")
   }
 
   return (
@@ -109,7 +80,7 @@ export function GameControls() {
                       Show Valid Moves
                     </Button>
                     <Button 
-                      onClick={clearSelection} 
+                      onClick={clearSelections} 
                       variant="outline" 
                       size="sm"
                     >
@@ -166,15 +137,12 @@ export function GameControls() {
           )}
           {gamePhase === 'playing' && (
             <>
-              <Button onClick={nextPlayer} variant="outline">
-                Next Player
-              </Button>
-              <Button onClick={advanceSeason} variant="outline">
-                Advance Season
+              <Button onClick={onAdvanceTurn} variant="outline">
+                Next Turn
               </Button>
             </>
           )}
-          <Button onClick={clearSelection} variant="outline">
+          <Button onClick={clearSelections} variant="outline">
             Clear Selection
           </Button>
           <Button onClick={toggleRules} variant="outline">

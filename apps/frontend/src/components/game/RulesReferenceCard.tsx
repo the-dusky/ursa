@@ -2,8 +2,14 @@
  * Rules Reference Card - Clear visual guide with board game style icons and formulas
  */
 import React from 'react'
+import { GAME_CONFIG } from '@/engine/GameConfig'
 
 export const RulesReferenceCard: React.FC = () => {
+  // Get movement costs from config for display
+  const leanMoveCost = GAME_CONFIG.movement.baseCost(3) // Example with 3 fat (≤5)
+  const heavyMoveCost = GAME_CONFIG.movement.baseCost(10) // Example with 10 fat (6-15)
+  const veryHeavyMoveCost = GAME_CONFIG.movement.baseCost(20) // Example with 20 fat (16+)
+  
   return (
     <div className="bg-white dark:bg-slate-800 rounded-lg shadow-lg p-4 space-y-4">
       <h2 className="text-lg font-bold text-slate-800 dark:text-slate-200 border-b pb-2">
@@ -16,15 +22,15 @@ export const RulesReferenceCard: React.FC = () => {
         <div className="text-xs space-y-1 bg-slate-50 dark:bg-slate-700 p-2 rounded">
           <div className="flex items-center justify-between">
             <span>🐻 ≤5 fat:</span>
-            <span className="font-mono">⚡1 energy</span>
+            <span className="font-mono">⚡{leanMoveCost} energy</span>
           </div>
           <div className="flex items-center justify-between">
             <span>🐻 6-15 fat:</span>
-            <span className="font-mono">⚡2 energy</span>
+            <span className="font-mono">⚡{heavyMoveCost} energy</span>
           </div>
           <div className="flex items-center justify-between">
             <span>🐻 16+ fat:</span>
-            <span className="font-mono">⚡3 energy</span>
+            <span className="font-mono">⚡{veryHeavyMoveCost} energy</span>
           </div>
         </div>
       </div>
@@ -35,15 +41,15 @@ export const RulesReferenceCard: React.FC = () => {
         <div className="text-xs bg-slate-50 dark:bg-slate-700 p-2 rounded">
           <div className="flex items-center justify-between mb-1">
             <span>Required:</span>
-            <span className="font-mono">🟡35 fat + 🏔️ Mountains</span>
+            <span className="font-mono">🟡{GAME_CONFIG.hibernation.fatCost} fat + 🏔️ Mountains</span>
           </div>
           <div className="flex items-center justify-between mb-1">
             <span>Cost:</span>
-            <span className="font-mono">🟡35 fat → 💤</span>
+            <span className="font-mono">🟡{GAME_CONFIG.hibernation.fatCost} fat → 💤</span>
           </div>
           <div className="flex items-center justify-between">
             <span>Reset to:</span>
-            <span className="font-mono">⚡5 energy, 🟡0 fat</span>
+            <span className="font-mono">⚡{GAME_CONFIG.hibernation.energyReset} energy, 🟡0 fat</span>
           </div>
         </div>
       </div>

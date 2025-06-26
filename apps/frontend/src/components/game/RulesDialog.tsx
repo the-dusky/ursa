@@ -1,12 +1,12 @@
 'use client'
 
-import { useGameStore } from '@/store/gameStore'
+import { useModalState } from '@/store/uiStore'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export function RulesDialog() {
-  const { showRules, toggleRules } = useGameStore()
+  const { showRules, toggleRules } = useModalState()
 
   return (
     <Dialog open={showRules} onOpenChange={toggleRules}>

@@ -7,51 +7,52 @@
  */
 
 import type { GameSpace, GamePiece } from '../store/gameStore'
+import { GAME_CONFIG, GameConfigHelpers } from '../engine/GameConfig'
+import type { GameConfig } from '../engine/types'
 
-// Types for the rules engine
+// Re-export types for backward compatibility
 export type ResourceType = 'grains' | 'berries' | 'salmon' | 'honey' | 'bearMeat'
 export type Season = 'Spring' | 'Summer' | 'Autumn' | 'Winter'
 
+// Legacy interface for backward compatibility
 export interface GameRulesConfig {
   maxEnergy: number
   hibernationFatCost: number
   emergencyEnergyConversion: number // fat to emergency energy ratio
 }
 
-export const DEFAULT_CONFIG: GameRulesConfig = {
-  maxEnergy: 20,
-  hibernationFatCost: 20,
-  emergencyEnergyConversion: 2 // 1 fat = 2 emergency energy
+// Convert new GameConfig to legacy format for backward compatibility
+function toLegacyConfig(config: GameConfig): GameRulesConfig {
+  return {
+    maxEnergy: config.energy.maxEnergy,
+    hibernationFatCost: config.hibernation.fatCost,
+    emergencyEnergyConversion: config.energy.emergencyConversion
+  }
 }
 
+export const DEFAULT_CONFIG: GameRulesConfig = toLegacyConfig(GAME_CONFIG)
+
+// Legacy exports - now derived from centralized config
 export const EMERGENCY_CONVERSION = {
-  maxFatPerTurn: 5 // Maximum fat that can be auto-converted per turn
+  maxFatPerTurn: GAME_CONFIG.energy.maxFatConversionPerTurn
 }
 
-export const SEASONAL_PRODUCTION = {
-  Spring: { grains: 4, berries: 1, salmon: 2, honey: 1 },
-  Summer: { grains: 3, berries: 3, salmon: 3, honey: 2 },
-  Autumn: { grains: 3, berries: 2, salmon: 4, honey: 1 },
-  Winter: { grains: 1, berries: 0, salmon: 0, honey: 0 }
-}
+export const SEASONAL_PRODUCTION = GAME_CONFIG.resources.seasonalProduction
 
-export const FOOD_CONVERSION_RATES = {
-  energy: { grains: 3, berries: 2, salmon: 1, honey: 4, bearMeat: 6 },
-  fat: { grains: 1, berries: 2, salmon: 4, honey: 3, bearMeat: 8 }
-}
+export const FOOD_CONVERSION_RATES = GAME_CONFIG.resources.conversion
 
 export const MOVEMENT_COSTS = {
-  baseCost: (fat: number) => {
-    if (fat <= 5) return 1   // Lean bears move efficiently
-    if (fat <= 15) return 2  // Getting heavy
-    return 3                 // Very heavy, hibernation-ready bears
-  },
-  winterCost: (isInMountains: boolean) => isInMountains ? 2 : 5
+  baseCost: GAME_CONFIG.movement.baseCost,
+  winterCost: (isInMountains: boolean) => isInMountains ? 
+    GAME_CONFIG.movement.winterCost.mountains : 
+    GAME_CONFIG.movement.winterCost.outside
 }
 
 export const ENERGY_LOSS = {
-  nonWinter: 1,
-  winter: (isInMountains: boolean) => isInMountains ? 2 : 5
+  nonWinter: GAME_CONFIG.energy.dailyLoss.other,
+  winter: (isInMountains: boolean) => isInMountains ? 
+    GAME_CONFIG.energy.dailyLoss.winter.mountains : 
+    GAME_CONFIG.energy.dailyLoss.winter.outside
 }
 
 /**
@@ -78,14 +79,7 @@ export function calculateMovementCost(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _config: GameRulesConfig = DEFAULT_CONFIG
 ): number {
-  const baseCost = MOVEMENT_COSTS.baseCost(piece.fat)
-  
-  if (season === 'Winter') {
-    const isInMountains = fromQuadrant === 'Mountains'
-    return MOVEMENT_COSTS.winterCost(isInMountains)
-  }
-  
-  return baseCost
+  return GameConfigHelpers.getMovementCost(piece, season, fromQuadrant)
 }
 
 /**
@@ -98,12 +92,7 @@ export function calculateEnergyLoss(
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _config: GameRulesConfig = DEFAULT_CONFIG
 ): number {
-  if (season === 'Winter') {
-    const isInMountains = quadrant === 'Mountains'
-    return ENERGY_LOSS.winter(isInMountains)
-  }
-  
-  return ENERGY_LOSS.nonWinter
+  return GameConfigHelpers.getEnergyLoss(season, quadrant)
 }
 
 /**

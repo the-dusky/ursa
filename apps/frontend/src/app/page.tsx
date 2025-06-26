@@ -9,6 +9,7 @@ import { GameControls } from '@/components/game/GameControls'
 import { PlayerControlCard } from '@/components/game/PlayerControlCard'
 import { SeasonIndicator } from '@/components/game/SeasonIndicator'
 import { GameLog } from '@/components/game/GameLog'
+import { DiceTray } from '@/components/game/DiceTray'
 import { MultiplayerControls } from '@/components/game/MultiplayerControls'
 import { RulesDialog } from '@/components/game/RulesDialog'
 import { RulesReferenceCard } from '@/components/game/RulesReferenceCard'
@@ -71,6 +72,7 @@ export default function Home() {
           {/* Right Sidebar - Game Controls & Log */}
           <aside className="lg:col-span-1 space-y-4">
             <GameControls />
+            <DiceTray />
             <GameLog />
             <MultiplayerControls />
           </aside>

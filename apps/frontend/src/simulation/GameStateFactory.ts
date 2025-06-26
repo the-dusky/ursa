@@ -88,7 +88,9 @@ function createBoard(): Board {
       3: { spaceCount: 12, radius: 160 },
       4: { spaceCount: 16, radius: 200 },
       5: { spaceCount: 20, radius: 240 }
-    }
+    },
+    bridges: {},
+    rotations: [0, 0, 0, 0, 0]
   }
   
   // Create spaces for each ring

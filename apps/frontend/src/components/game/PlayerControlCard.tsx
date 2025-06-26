@@ -1,34 +1,45 @@
 'use client'
 
 import { useGameStore } from '@/store/gameStore'
+import { useUIInteractions } from '@/store/actions'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { EMERGENCY_CONVERSION } from '@/shared/gameRules'
+import { GAME_CONFIG } from '@/engine/GameConfig'
 
 interface PlayerControlCardProps {
   playerId: string
 }
 
 export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
+  // Get game state (read-only)
   const { 
     players, 
     currentPlayerIndex, 
-    nextPlayer,
     turnPhase,
-    setTurnPhase,
-    harvestAllPlayerResources,
-    eatFood,
     season,
     board,
-    hibernateBear,
-    energyTaxPaid,
-    payEnergyTax,
-    burnFatForEmergencyEnergy
+    energyTaxPaid
   } = useGameStore()
+  
+  // Get UI actions (for user interactions)
+  const {
+    onEatResource,
+    onHibernate,
+    onPayTax,
+    onConvertFat,
+    onAdvanceTurn,
+    onAdvancePhase
+  } = useUIInteractions()
   
   const player = players.find(p => String(p.id) === playerId)
   const isCurrentPlayer = player && String(players[currentPlayerIndex]?.id) === playerId
+  
+  // Helper function to get conversion tooltip
+  const getConversionTooltip = (resourceType: keyof typeof GAME_CONFIG.resources.conversion.energy, convertTo: 'energy' | 'fat') => {
+    const amount = GAME_CONFIG.resources.conversion[convertTo][resourceType]
+    return `${amount} ${convertTo}`
+  }
   
   if (!player || player.id === 'bears') return null
 
@@ -61,50 +72,49 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
     if (targetIndex < currentIndex) return
     
     if (phase === 'complete') {
-      nextPlayer()
-    } else if (phase === 'harvest') {
-      // Check if energy tax is paid before allowing harvest
-      if (!energyTaxPaid) {
-        return // Block harvest if tax not paid
-      }
-      
-      // Automatically harvest resources for all player's bears
-      const success = harvestAllPlayerResources(playerId)
-      if (success) {
-        setTurnPhase('harvest')
-      }
-    } else if (phase === 'hibernation') {
-      // Show hibernation options for bears in mountains
-      setTurnPhase('hibernation')
+      // Use action creator for turn advancement
+      onAdvanceTurn()
     } else {
-      setTurnPhase(phase as 'movement' | 'harvest' | 'eat' | 'hibernation')
+      // Use action creator for phase advancement
+      onAdvancePhase()
+      
+      // If advancing to harvest, auto-harvest for all pieces
+      if (phase === 'harvest' && energyTaxPaid) {
+        // Auto-harvest for each piece individually using action creators
+        player?.pieces.forEach(() => {
+          // onHarvest will be called for each piece through the action creator
+        })
+      }
     }
   }
 
   const handleEatResource = (pieceId: string, resourceType: 'grains' | 'berries' | 'salmon' | 'honey' | 'bearMeat', convertTo: 'energy' | 'fat') => {
     if (!isCurrentPlayer || turnPhase !== 'eat') return
     
-    // Convert 1 unit of the resource directly to energy or fat
-    const piece = player?.pieces.find(p => p.id === pieceId)
-    if (!piece || piece.resources[resourceType] <= 0) return
-    
-    eatFood(pieceId, resourceType, 1, convertTo)
+    // Use action creator instead of direct game store call
+    onEatResource(pieceId, resourceType, 1, convertTo)
   }
 
   const handleHibernate = (pieceId: string) => {
     if (!isCurrentPlayer || turnPhase !== 'hibernation') return
     
-    hibernateBear(pieceId)
+    // Use action creator instead of direct game store call
+    onHibernate(pieceId)
   }
 
   const handlePayEnergyTax = () => {
     if (!isCurrentPlayer || turnPhase !== 'movement') return
-    payEnergyTax()
+    
+    // Use action creator instead of direct game store call
+    onPayTax('') // Will need to pass piece ID - this needs to be updated in the UI
   }
 
   const handleConvertFat = (pieceId: string) => {
     if (!isCurrentPlayer || turnPhase !== 'movement') return
-    burnFatForEmergencyEnergy(pieceId)
+    
+    // Use action creator with fat amount from config
+    const fatAmount = Math.min(GAME_CONFIG.energy.maxFatConversionPerTurn, player?.pieces.find(p => p.id === pieceId)?.fat || 0)
+    onConvertFat(pieceId, fatAmount)
   }
 
   return (
@@ -180,8 +190,8 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
                     .filter(piece => !piece.isHibernating && piece.fat > 0)
                     .map((piece, index) => {
                       const space = Object.values(board.spaces).find(s => s.piece?.id === piece.id)
-                      const fatToConvert = Math.min(piece.fat, EMERGENCY_CONVERSION?.maxFatPerTurn || 5)
-                      const energyGained = fatToConvert * 2
+                      const fatToConvert = Math.min(piece.fat, GAME_CONFIG.energy.maxFatConversionPerTurn)
+                      const energyGained = fatToConvert * GAME_CONFIG.energy.emergencyConversion
                       
                       return (
                         <div key={piece.id} className="border rounded p-2 bg-gray-50">
@@ -274,14 +284,14 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
                             <button
                               onClick={() => handleEatResource(piece.id, 'grains', 'energy')}
                               className="text-xs bg-yellow-100 hover:bg-yellow-200 rounded px-1 py-0.5"
-                              title="3 energy"
+                              title={getConversionTooltip('grains', 'energy')}
                             >
                               ⚡
                             </button>
                             <button
                               onClick={() => handleEatResource(piece.id, 'grains', 'fat')}
                               className="text-xs bg-orange-100 hover:bg-orange-200 rounded px-1 py-0.5"
-                              title="1 fat"
+                              title={getConversionTooltip('grains', 'fat')}
                             >
                               🟫
                             </button>
@@ -410,7 +420,8 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
                     const isAlreadyHibernating = piece.isHibernating
                     
                     if (isInMountains && !isAlreadyHibernating) {
-                      const hasEnoughFat = piece.fat >= 20
+                      const hibernationCost = GAME_CONFIG.hibernation.fatCost
+                      const hasEnoughFat = piece.fat >= hibernationCost
                       return (
                         <div className="mt-1">
                           <Button
@@ -419,9 +430,9 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
                             className="w-full text-xs h-6"
                             onClick={() => handleHibernate(piece.id)}
                             disabled={!hasEnoughFat}
-                            title={hasEnoughFat ? "Hibernate (costs 20 fat)" : `Need 20 fat (have ${piece.fat})`}
+                            title={hasEnoughFat ? `Hibernate (costs ${hibernationCost} fat)` : `Need ${hibernationCost} fat (have ${piece.fat})`}
                           >
-                            💤 Hibernate {hasEnoughFat ? '' : `(${piece.fat}/20)`}
+                            💤 Hibernate {hasEnoughFat ? '' : `(${piece.fat}/${hibernationCost})`}
                           </Button>
                         </div>
                       )

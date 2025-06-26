@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useGameStore } from '@/store/gameStore'
+import { useGameLog } from '@/store/uiStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -24,9 +25,10 @@ export function MultiplayerControls() {
     roomId, 
     playerName,
     startMultiplayerGame,
-    disconnectFromRoom,
-    addToLog
+    disconnectFromRoom
   } = useGameStore()
+  
+  const { addLogMessage } = useGameLog()
   
   const [showJoinDialog, setShowJoinDialog] = useState(false)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
@@ -81,7 +83,7 @@ export function MultiplayerControls() {
   const copyRoomId = () => {
     if (roomId) {
       navigator.clipboard.writeText(roomId)
-      addToLog('Room ID copied to clipboard!')
+      addLogMessage('Room ID copied to clipboard!')
     }
   }
 
@@ -89,7 +91,7 @@ export function MultiplayerControls() {
     if (roomId) {
       const shareUrl = `${window.location.origin}?room=${roomId}`
       navigator.clipboard.writeText(shareUrl)
-      addToLog('Share link copied to clipboard!')
+      addLogMessage('Share link copied to clipboard!')
     }
   }
 

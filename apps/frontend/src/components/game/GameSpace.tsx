@@ -1,6 +1,8 @@
 'use client'
 
-import { useGameStore, GameSpace as GameSpaceType } from '@/store/gameStore'
+import { GameSpace as GameSpaceType } from '@/store/gameStore'
+import { useSelectionState } from '@/store/uiStore'
+import { useUIInteractions } from '@/store/actions'
 import { cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
 
@@ -12,19 +14,20 @@ interface GameSpaceProps {
 }
 
 export function GameSpace({ space, x, y, size }: GameSpaceProps) {
-  const { selectSpace, selectedSpaceId } = useGameStore()
+  const { selectedSpaceId, highlightedSpaces } = useSelectionState()
+  const { onSpaceClick } = useUIInteractions()
 
   const handleClick = () => {
     console.log("clicked space " + space.id)
-    selectSpace(space.id)
+    onSpaceClick(space.id)
   }
 
   const getSpaceColor = () => {
-    if (space.isSelected || selectedSpaceId === space.id) {
+    if (selectedSpaceId === space.id) {
       return 'bg-selection border-yellow-400'
     }
     
-    if (space.isHighlighted) {
+    if (highlightedSpaces.includes(space.id)) {
       return 'bg-green-500/70 border-green-400'
     }
 
@@ -110,7 +113,7 @@ export function GameSpace({ space, x, y, size }: GameSpaceProps) {
         )}
 
         {/* Selection Ring */}
-        {(space.isSelected || selectedSpaceId === space.id) && (
+        {selectedSpaceId === space.id && (
           <motion.div
             className="absolute -inset-1 rounded-full border-2 border-yellow-400"
             initial={{ scale: 0.8, opacity: 0 }}
@@ -120,7 +123,7 @@ export function GameSpace({ space, x, y, size }: GameSpaceProps) {
         )}
 
         {/* Highlight Ring for Valid Moves */}
-        {space.isHighlighted && (
+        {highlightedSpaces.includes(space.id) && (
           <motion.div
             className="absolute -inset-1 rounded-full border-2 border-green-400 animate-pulse"
             initial={{ scale: 0.8, opacity: 0 }}
