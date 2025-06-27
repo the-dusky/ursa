@@ -10,14 +10,18 @@ import { Input } from '@/components/ui/input'
 import { useGameStore } from '@/store/gameStore'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-// Generate player session ID
+// Generate unique player ID per browser tab
 function generatePlayerId(): string {
-  const stored = sessionStorage.getItem('player-session-id')
-  if (stored) return stored
+  // Get base player identity from localStorage (persists across browser restarts)
+  let basePlayerId = localStorage.getItem('base-player-id')
+  if (!basePlayerId) {
+    basePlayerId = `player-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+    localStorage.setItem('base-player-id', basePlayerId)
+  }
   
-  const newId = `player-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
-  sessionStorage.setItem('player-session-id', newId)
-  return newId
+  // Add tab-specific identifier (unique per tab, even from same browser)
+  const tabId = crypto.randomUUID ? crypto.randomUUID().substring(0, 8) : Math.random().toString(36).substring(2, 8)
+  return `${basePlayerId}-tab-${tabId}`
 }
 
 export function GameSetup() {
