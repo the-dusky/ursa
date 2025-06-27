@@ -42,6 +42,7 @@ export function GameSetup() {
     initializeGameWithPlayerCount, 
     startMultiplayerGame, 
     isConnected, 
+    isMultiplayer,
     roomPlayerCount, 
     maxRoomPlayers,
     roomId: currentRoomId,
@@ -51,7 +52,8 @@ export function GameSetup() {
     createdRooms,
     addCreatedRoom,
     removeCreatedRoom,
-    updateRoomLastUsed
+    updateRoomLastUsed,
+    loadCreatedRooms
   } = useGameStore()
 
   const handleJoinRoom = useCallback(async (customRoomId?: string, customPlayerName?: string, isCreatingRoom?: boolean) => {
@@ -80,12 +82,13 @@ export function GameSetup() {
     }
   }, [roomId, playerName, searchParams, router, startMultiplayerGame])
 
-  // Set origin on client side
+  // Set origin on client side and load created rooms
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setOrigin(window.location.origin)
+      loadCreatedRooms()
     }
-  }, [])
+  }, [loadCreatedRooms])
 
   // Check for room in URL on mount and load saved player name
   useEffect(() => {
@@ -449,7 +452,7 @@ export function GameSetup() {
             <CardHeader>
               <CardTitle className="text-lg">📂 My Created Rooms</CardTitle>
               <p className="text-slate-600 dark:text-slate-400 text-sm">
-                Rooms you've created recently
+                Rooms you&apos;ve created recently
               </p>
             </CardHeader>
             <CardContent>

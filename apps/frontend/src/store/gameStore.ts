@@ -150,6 +150,7 @@ export interface CleanGameState {
   addCreatedRoom: (roomId: string, roomName: string) => void
   removeCreatedRoom: (roomId: string) => void
   updateRoomLastUsed: (roomId: string) => void
+  loadCreatedRooms: () => void
   
   // Room validation
   isValidPlayerInRoom: () => boolean
@@ -173,13 +174,9 @@ const gameEngine = new GameEngine()
 const CREATED_ROOMS_KEY = 'seasonal-game-created-rooms'
 
 function getCreatedRoomsFromStorage(): CreatedRoom[] {
-  if (typeof window === 'undefined') return []
-  try {
-    const stored = localStorage.getItem(CREATED_ROOMS_KEY)
-    return stored ? JSON.parse(stored) : []
-  } catch {
-    return []
-  }
+  // Always return empty array initially to avoid hydration mismatch
+  // The actual rooms will be loaded in a useEffect
+  return []
 }
 
 function saveCreatedRoomsToStorage(rooms: CreatedRoom[]) {
@@ -1091,6 +1088,17 @@ export const useGameStore = create<CleanGameState>()(
         )
         set({ createdRooms: updatedRooms })
         saveCreatedRoomsToStorage(updatedRooms)
+      },
+
+      loadCreatedRooms: () => {
+        if (typeof window === 'undefined') return
+        try {
+          const stored = localStorage.getItem(CREATED_ROOMS_KEY)
+          const rooms = stored ? JSON.parse(stored) : []
+          set({ createdRooms: rooms })
+        } catch (error) {
+          console.warn('Failed to load created rooms:', error)
+        }
       },
 
       // Room validation
