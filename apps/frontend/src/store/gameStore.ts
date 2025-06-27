@@ -568,6 +568,8 @@ export const useGameStore = create<CleanGameState>()(
           console.log(`📊 Complete player slots:`, playerSlots)
           
           console.log(`\n🔌 ===== STEP 3: CREATING Y.JS CONNECTION =====`)
+          console.log(`👤 WHO: Room creator "${creatorName}" (${creatorId})`)
+          console.log(`🎯 PURPOSE: Initial room setup and config storage`)
           
           // Initialize Y.js connection and store room config on server
           const wsUrl = process.env.NODE_ENV === 'development' 
@@ -580,8 +582,8 @@ export const useGameStore = create<CleanGameState>()(
           yjsDoc = new Y.Doc()
           yjsProvider = new WebsocketProvider(wsUrl, roomId, yjsDoc)
           
-          console.log(`✅ Y.js document created`)
-          console.log(`✅ WebSocket provider initialized`)
+          console.log(`✅ Y.js document created by room creator`)
+          console.log(`✅ WebSocket provider initialized for room setup`)
           
           // Set up connection handlers
           yjsProvider.on('status', (event: { status: string }) => {
@@ -687,7 +689,9 @@ export const useGameStore = create<CleanGameState>()(
           
           // Initialize Y.js connection if not already connected to this room
           if (!yjsDoc || !yjsProvider || get().roomId !== roomId) {
-            console.log('🔌 Creating new Y.js connection')
+            console.log(`\n🔌 ===== CREATING Y.JS CONNECTION =====`)
+            console.log(`👤 WHO: Player "${playerName}" (${playerId})`)
+            console.log(`🎯 PURPOSE: Joining existing room`)
             
             // Cleanup any existing connections
             cleanupConnection()
@@ -697,8 +701,7 @@ export const useGameStore = create<CleanGameState>()(
               ? (process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:1234')
               : (process.env.NEXT_PUBLIC_WS_URL || 'wss://ursa-game-server.up.railway.app')
             
-            console.log(`🔌 Creating new WebSocket connection to: ${wsUrl}`)
-            console.log(`🎮 Player ID: ${playerId}`)
+            console.log(`🌐 WebSocket URL: ${wsUrl}`)
             console.log(`🏠 Room ID: ${roomId}`)
             
             yjsDoc = new Y.Doc()
@@ -718,7 +721,10 @@ export const useGameStore = create<CleanGameState>()(
             
             gameStateMap = yjsDoc.getMap('gameState')
           } else {
-            console.log('🔌 Reusing existing Y.js connection')
+            console.log(`\n🔌 ===== REUSING EXISTING Y.JS CONNECTION =====`)
+            console.log(`👤 WHO: Player "${playerName}" (${playerId})`)
+            console.log(`🎯 PURPOSE: Room creator joining their own room`)
+            console.log(`✅ Y.js connection already exists`)
           }
           
           const playersMap = yjsDoc.getMap('players')
