@@ -19,7 +19,7 @@ import { GameSetup } from '@/components/game/GameSetup'
 import { useGameStore } from '@/store/gameStore'
 
 function HomeContent() {
-  const { gamePhase, players, isMultiplayer, playerName, playerNumber, isConnected, isValidPlayerInRoom, isGameStarted } = useGameStore()
+  const { gamePhase, players, isMultiplayer, playerName, playerNumber, isValidPlayerInRoom, isGameStarted } = useGameStore()
   const searchParams = useSearchParams()
   const router = useRouter()
 
@@ -53,8 +53,8 @@ function HomeContent() {
     return currentPlayer ? [currentPlayer, ...otherPlayers] : players
   }, [players, isMultiplayer, playerNumber])
 
-  // Show setup screen if game hasn't started yet AND not connected to multiplayer room
-  if (!isGameStarted && !(isMultiplayer && isConnected)) {
+  // Show setup screen if game hasn't started yet
+  if (!isGameStarted) {
     return (
       <Suspense fallback={<div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center">
         <div className="text-center">
