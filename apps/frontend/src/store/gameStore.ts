@@ -14,6 +14,8 @@ import { devtools } from 'zustand/middleware'
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import { BoardFactory, GAME_CONFIG, type EngineBoard, type BoardConfig, type BoardSpace } from '../engine'
+import { GameEngine } from '../engine/GameEngine'
+import { StateAdapter } from '../engine/StateAdapter'
 import type { CoreGameState, QuadrantType } from '../engine/types'
 import type { DiceRoll } from '../engine/utils/dice'
 
@@ -60,6 +62,7 @@ export interface GamePiece {
   fat: number
   emergencyEnergy: number
   isHibernating?: boolean
+  movedThisTurn?: boolean  // Track if piece moved this turn for harvest rules
 }
 
 export interface Player {
@@ -141,6 +144,9 @@ let yjsProvider: WebsocketProvider | null = null
 let gameStateMap: Y.Map<unknown> | null = null
 let isUpdatingFromYjs = false // 🔒 Lock to prevent race conditions
 let syncTimeout: NodeJS.Timeout
+
+// Create a singleton game engine instance for setup operations
+const gameEngine = new GameEngine()
 
 /**
  * Y.js Race Condition Fix Documentation
@@ -315,7 +321,7 @@ export const useGameStore = create<CleanGameState>()(
       playerId: null,
       playerNumber: null,
       roomPlayerCount: 0,
-      maxRoomPlayers: 2,
+      maxRoomPlayers: 4,
 
       // Game initialization
       initializeGame: () => {
@@ -340,189 +346,125 @@ export const useGameStore = create<CleanGameState>()(
 
       initializeGameWithPlayerCount: (playerCount: number) => {
         console.log('Initializing game with', playerCount, 'players')
-        const newBoard = createInitialBoard()
-        const newPlayers = createInitialPlayers(playerCount)
         
-        // Randomly place each player's starting bear
-        const availableSpaces = Object.values(newBoard.spaces).filter(space => 
-          space.ring >= 2 && space.ring <= 4 && space.canProduce
-        )
+        // Create initial board and players without bear placement
+        const initialBoard = createInitialBoard()
+        const initialPlayers = createInitialPlayers(playerCount)
         
-        if (availableSpaces.length >= newPlayers.length) {
-          // Shuffle available spaces to get random placement
-          const shuffledSpaces = [...availableSpaces].sort(() => Math.random() - 0.5)
+        // Convert to engine format for setup using StateAdapter
+        const engineBoard = StateAdapter.toBoardForSetup(initialBoard)
+        const enginePlayers = StateAdapter.toPlayersForSetup(initialPlayers)
+        
+        // Use engine to initialize game with proper bear placement
+        const result = gameEngine.initializeGameWithPlayers(engineBoard, enginePlayers)
+        
+        if (result.success) {
+          // Convert engine result back to store format
+          const storeUpdate = StateAdapter.fromEngineState(result.state!)
           
-          newPlayers.forEach((player, playerIndex) => {
-            if (playerIndex < shuffledSpaces.length) {
-              const selectedSpace = shuffledSpaces[playerIndex]
-              
-              // Create starting bear for this player
-              const startingBear: GamePiece = {
-                id: `bear-${player.id}-1`,
-                playerId: player.id,
-                spaceId: selectedSpace.id,
-                type: 'bear',
-                health: 10,
-                resources: {
-                  grains: 0,
-                  berries: 0,
-                  salmon: 0,
-                  honey: 0,
-                  bearMeat: 0
-                },
-                energy: 5,
-                fat: 0,
-                emergencyEnergy: 0,
-                isHibernating: false
-              }
-              
-              // Add bear to player's piece list
-              player.pieces.push(startingBear)
-              player.pieceCount.bears = 1
-              
-              // Place bear on the selected space in the board
-              newBoard.spaces[selectedSpace.id].piece = startingBear
-            }
-          })
-        }
-        
-        set({
-          board: newBoard,
-          players: newPlayers,
-          currentPlayerIndex: 0,
-          season: 'Spring',
-          year: 1,
-          turn: 1,
-          gamePhase: 'playing',
-          turnPhase: 'movement',
-          energyTaxPaid: false,
-          diceState: {
-            positionRolls: null,
-            directionRolls: null,
-            rotations: [],
-            isRolling: false
-          }
-        })
-        
-        // Update Y.js if connected
-        if (gameStateMap) {
-          try {
-            gameStateMap.set('currentPlayerIndex', 0)
-            gameStateMap.set('season', 'Spring')
-            gameStateMap.set('year', 1)
-            gameStateMap.set('turn', 1)
-            gameStateMap.set('gamePhase', 'playing')
-            gameStateMap.set('turnPhase', 'movement')
-            gameStateMap.set('energyTaxPaid', false)
-            gameStateMap.set('diceState', {
+          // Apply the complete game state with bears placed
+          set({
+            ...storeUpdate,
+            // Ensure UI state is properly set
+            diceState: {
               positionRolls: null,
               directionRolls: null,
               rotations: [],
               isRolling: false
-            })
-          } catch (error) {
-            console.warn('Y.js update error:', error)
-          }
+            }
+          })
+          
+          console.log('Game initialized successfully with engine setup')
+        } else {
+          console.error('Failed to initialize game with engine:', result.error)
+          // Fallback to basic initialization without bears
+          set({
+            board: initialBoard,
+            players: initialPlayers,
+            currentPlayerIndex: 0,
+            season: 'Spring',
+            year: 1,
+            turn: 1,
+            gamePhase: 'setup',
+            turnPhase: 'movement',
+            energyTaxPaid: false,
+            diceState: {
+              positionRolls: null,
+              directionRolls: null,
+              rotations: [],
+              isRolling: false
+            }
+          })
         }
+        
+        // Note: Y.js sync is handled automatically by the store subscription
       },
 
       initializeMultiplayerGame: (multiplayerPlayers: { [playerId: string]: { name: string; playerNumber: number } }) => {
         console.log('Initializing multiplayer game with players:', multiplayerPlayers)
-        const newBoard = createInitialBoard()
-        const newPlayers = createInitialPlayers(2, multiplayerPlayers)
         
-        // Randomly place each player's starting bear
-        const availableSpaces = Object.values(newBoard.spaces).filter(space => 
-          space.ring >= 2 && space.ring <= 4 && space.canProduce
-        )
+        // Create initial board and players without bear placement
+        const initialBoard = createInitialBoard()
+        const initialPlayers = createInitialPlayers(Object.keys(multiplayerPlayers).length, multiplayerPlayers)
         
-        if (availableSpaces.length >= newPlayers.length) {
-          // Shuffle available spaces to get random placement
-          const shuffledSpaces = [...availableSpaces].sort(() => Math.random() - 0.5)
+        // Convert to engine format for setup using StateAdapter
+        const engineBoard = StateAdapter.toBoardForSetup(initialBoard)
+        const enginePlayers = StateAdapter.toPlayersForSetup(initialPlayers)
+        
+        // Use engine to initialize game with proper bear placement
+        const result = gameEngine.initializeGameWithPlayers(engineBoard, enginePlayers)
+        
+        if (result.success) {
+          // Convert engine result back to store format
+          const storeUpdate = StateAdapter.fromEngineState(result.state!)
           
-          newPlayers.forEach((player, playerIndex) => {
-            if (playerIndex < shuffledSpaces.length) {
-              const selectedSpace = shuffledSpaces[playerIndex]
-              
-              // Create starting bear for this player
-              const startingBear: GamePiece = {
-                id: `bear-${player.id}-1`,
-                playerId: player.id,
-                spaceId: selectedSpace.id,
-                type: 'bear',
-                health: 10,
-                resources: {
-                  grains: 0,
-                  berries: 0,
-                  salmon: 0,
-                  honey: 0,
-                  bearMeat: 0
-                },
-                energy: 5,
-                fat: 0,
-                emergencyEnergy: 0,
-                isHibernating: false
-              }
-              
-              // Add bear to player's piece list
-              player.pieces.push(startingBear)
-              player.pieceCount.bears = 1
-              
-              // Place bear on the selected space in the board
-              newBoard.spaces[selectedSpace.id].piece = startingBear
-            }
-          })
-        }
-        
-        set({
-          board: newBoard,
-          players: newPlayers,
-          currentPlayerIndex: 0,
-          season: 'Spring',
-          year: 1,
-          turn: 1,
-          gamePhase: 'playing',
-          turnPhase: 'movement',
-          energyTaxPaid: false,
-          diceState: {
-            positionRolls: null,
-            directionRolls: null,
-            rotations: [],
-            isRolling: false
-          }
-        })
-        
-        // Update Y.js with the full game state if connected
-        if (gameStateMap) {
-          try {
-            gameStateMap.set('currentPlayerIndex', 0)
-            gameStateMap.set('season', 'Spring')
-            gameStateMap.set('year', 1)
-            gameStateMap.set('turn', 1)
-            gameStateMap.set('gamePhase', 'playing')
-            gameStateMap.set('turnPhase', 'movement')
-            gameStateMap.set('energyTaxPaid', false)
-            gameStateMap.set('diceState', {
+          // Apply the complete game state with bears placed
+          set({
+            ...storeUpdate,
+            // Ensure UI state is properly set
+            diceState: {
               positionRolls: null,
               directionRolls: null,
               rotations: [],
               isRolling: false
-            })
-            gameStateMap.set('players', newPlayers)
-            gameStateMap.set('board', newBoard)
-            console.log('Synced full game state to Y.js')
-          } catch (error) {
-            console.warn('Y.js update error:', error)
-          }
+            }
+          })
+          
+          console.log('Multiplayer game initialized successfully with engine setup')
+        } else {
+          console.error('Failed to initialize multiplayer game with engine:', result.error)
+          // Fallback to basic initialization without bears
+          set({
+            board: initialBoard,
+            players: initialPlayers,
+            currentPlayerIndex: 0,
+            season: 'Spring',
+            year: 1,
+            turn: 1,
+            gamePhase: 'setup',
+            turnPhase: 'movement',
+            energyTaxPaid: false,
+            diceState: {
+              positionRolls: null,
+              directionRolls: null,
+              rotations: [],
+              isRolling: false
+            }
+          })
         }
+        
+        // Note: Y.js sync is handled automatically by the store subscription
       },
 
       // Multiplayer setup
       startMultiplayerGame: async (roomId: string, playerName: string, playerId: string) => {
         try {
-          // Initialize Y.js
+          // Initialize Y.js with environment-specific WebSocket URL
           yjsDoc = new Y.Doc()
-          yjsProvider = new WebsocketProvider('ws://localhost:1234', roomId, yjsDoc)
+          const wsUrl = process.env.NEXT_PUBLIC_YJS_SERVER || 'ws://localhost:1234'
+          
+          console.log(`🔌 Connecting to WebSocket: ${wsUrl}`)
+          yjsProvider = new WebsocketProvider(wsUrl, roomId, yjsDoc)
           gameStateMap = yjsDoc.getMap('gameState')
           const playersMap = yjsDoc.getMap('players')
 
@@ -537,8 +479,8 @@ export const useGameStore = create<CleanGameState>()(
             (p: { isActive: boolean; id: string }) => p.isActive && p.id !== playerId
           )
           
-          if (activeExistingPlayers.length >= 2) {
-            throw new Error('Room is full - maximum 2 players allowed')
+          if (activeExistingPlayers.length >= 4) {
+            throw new Error('Room is full - maximum 4 players allowed')
           }
 
           // Determine player number based on existing players
@@ -553,7 +495,7 @@ export const useGameStore = create<CleanGameState>()(
             const takenNumbers = activeExistingPlayers.map((p: { playerNumber?: number }) => p.playerNumber || 1)
             console.log('Taken player numbers:', takenNumbers)
             
-            for (let i = 1; i <= 2; i++) {
+            for (let i = 1; i <= 4; i++) {
               if (!takenNumbers.includes(i)) {
                 playerNumber = i
                 break
@@ -609,9 +551,9 @@ export const useGameStore = create<CleanGameState>()(
             
             set({ roomPlayerCount: activePlayerCount })
 
-            // Start game when 2 players are connected, but only let Player 1 initialize
-            if (activePlayerCount === 2 && get().gamePhase === 'setup') {
-              console.log('Starting multiplayer game with 2 players')
+            // Start game when 2-4 players are connected, but only let Player 1 initialize
+            if (activePlayerCount >= 2 && activePlayerCount <= 4 && get().gamePhase === 'setup') {
+              console.log(`Starting multiplayer game with ${activePlayerCount} players`)
               console.log('Current players in room:', currentPlayers)
               console.log('My player info:', { playerId: get().playerId, playerNumber: get().playerNumber })
               

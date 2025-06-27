@@ -9,11 +9,28 @@
     "build:all": "pnpm --filter frontend build",
     "start": "pnpm --filter frontend start",
     "lint": "pnpm --filter frontend lint",
+    
+    "# Y.js Server Management": "",
     "server": "docker compose up y-websocket-server",
     "server:build": "docker compose build y-websocket-server",
     "server:dev": "docker compose up --build y-websocket-server",
-    "dev:full": "concurrently \"pnpm run server:dev\" \"pnpm run dev\"",
-    "install:all": "pnpm install"
+    "server:logs": "docker compose logs -f y-websocket-server",
+    "server:stop": "docker compose down",
+    
+    "# Development Modes": "",
+    "dev:local": "cp .env.docker .env.local && concurrently \"pnpm run server:dev\" \"pnpm run dev\"",
+    "dev:remote": "cp .env.remote .env.local && pnpm run dev",
+    "dev:full-docker": "cp .env.docker .env.local && docker compose --profile full-stack up --build",
+    "dev:full": "pnpm run dev:local",
+    
+    "# Deployment Commands": "",
+    "deploy:server": "railway up --service y-websocket-server",
+    "deploy:check": "railway status",
+    
+    "# Utility Commands": "",
+    "install:all": "pnpm install",
+    "clean": "pnpm --filter frontend run clean && docker compose down -v",
+    "reset": "pnpm run clean && pnpm run install:all"
   },
   "dependencies": {},
   "devDependencies": {

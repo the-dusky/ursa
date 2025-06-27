@@ -23,10 +23,10 @@ import type {
   HarvestAction,
   EnergyTaxAction,
   EmergencyEnergyAction,
-  DeathAction
+  DeathAction,
+  TradingAction
 } from './types/Actions'
-import type { GameConfig } from './types'
-import { GAME_CONFIG } from './GameConfig'
+import { GAME_CONFIG, type GameConfig } from './GameConfig'
 
 export class GameEngine {
   constructor(private config: GameConfig = GAME_CONFIG) {}
@@ -50,6 +50,8 @@ export class GameEngine {
         return this.executeEmergencyEnergy(state, action)
       case 'death':
         return this.executeDeath(state, action)
+      case 'trading':
+        return this.executeTrading(state, action)
       case 'turn_advancement':
         return this.executeTurnAdvancement(state)
       case 'phase_advancement':
@@ -142,7 +144,8 @@ export class GameEngine {
         ...piece,
         spaceId: action.toSpaceId,
         energy: newEnergy,
-        emergencyEnergy: newEmergencyEnergy
+        emergencyEnergy: newEmergencyEnergy,
+        movedThisTurn: true  // Mark that this piece moved this turn
       }),
       message: `Moved piece using ${totalCost} energy`
     }
@@ -244,6 +247,15 @@ export class GameEngine {
 
     if (!space.canProduce) {
       return { success: false, state, error: 'This space cannot produce resources' }
+    }
+
+    // New rule: Bears that stayed on the same space get no harvest
+    if (!piece.movedThisTurn) {
+      return { 
+        success: true, 
+        state: state, 
+        message: 'No harvest - bear must move to gather resources' 
+      }
     }
 
     const production = this.config.resources.seasonalProduction[state.season]
@@ -410,6 +422,69 @@ export class GameEngine {
   }
 
   /**
+   * Execute trading action between two pieces
+   */
+  executeTrading(state: CoreGameState, action: TradingAction): GameResult<CoreGameState> {
+    const validation = this.validateTrading(state, action)
+    if (!validation.valid) {
+      return { success: false, state, error: validation.error }
+    }
+
+    const fromPiece = this.findPiece(state, action.fromPieceId)
+    const toPiece = this.findPiece(state, action.toPieceId)
+
+    if (!fromPiece || !toPiece) {
+      return { success: false, state, error: 'One or both pieces not found' }
+    }
+
+    // Check if pieces have enough resources
+    if (fromPiece.resources[action.fromResourceType] < action.fromAmount) {
+      return {
+        success: false,
+        state,
+        error: `From piece doesn't have enough ${action.fromResourceType}: has ${fromPiece.resources[action.fromResourceType]}, needs ${action.fromAmount}`
+      }
+    }
+
+    if (toPiece.resources[action.toResourceType] < action.toAmount) {
+      return {
+        success: false,
+        state,
+        error: `To piece doesn't have enough ${action.toResourceType}: has ${toPiece.resources[action.toResourceType]}, needs ${action.toAmount}`
+      }
+    }
+
+    // Execute the trade
+    const updatedFromPiece: CoreGamePiece = {
+      ...fromPiece,
+      resources: {
+        ...fromPiece.resources,
+        [action.fromResourceType]: fromPiece.resources[action.fromResourceType] - action.fromAmount,
+        [action.toResourceType]: fromPiece.resources[action.toResourceType] + action.toAmount
+      }
+    }
+
+    const updatedToPiece: CoreGamePiece = {
+      ...toPiece,
+      resources: {
+        ...toPiece.resources,
+        [action.toResourceType]: toPiece.resources[action.toResourceType] - action.toAmount,
+        [action.fromResourceType]: toPiece.resources[action.fromResourceType] + action.fromAmount
+      }
+    }
+
+    // Update both pieces in the state
+    let newState = this.updatePieceInState(state, updatedFromPiece)
+    newState = this.updatePieceInState(newState, updatedToPiece)
+
+    return {
+      success: true,
+      state: newState,
+      message: `Traded ${action.fromAmount} ${action.fromResourceType} for ${action.toAmount} ${action.toResourceType}`
+    }
+  }
+
+  /**
    * Execute turn advancement
    */
   executeTurnAdvancement(state: CoreGameState): GameResult<CoreGameState> {
@@ -451,15 +526,110 @@ export class GameEngine {
     const currentIndex = phaseOrder.indexOf(state.turnPhase)
     const nextIndex = (currentIndex + 1) % phaseOrder.length
     
-    const newState: CoreGameState = {
+    let newState: CoreGameState = {
       ...state,
       turnPhase: phaseOrder[nextIndex]
+    }
+
+    // Reset movement flags when entering movement phase (start of new player's turn)
+    if (phaseOrder[nextIndex] === 'movement') {
+      newState = this.resetMovementFlags(newState)
     }
 
     return {
       success: true,
       state: newState,
       message: `Advanced to ${phaseOrder[nextIndex]} phase`
+    }
+  }
+
+  /**
+   * Initialize game with player setup and bear placement
+   */
+  initializeGameWithPlayers(
+    board: CoreGameState['board'], 
+    players: CoreGameState['players']
+  ): GameResult<CoreGameState> {
+    // Find suitable starting spaces (rings 2-4, can produce)
+    const availableSpaces = Object.values(board.spaces).filter(space => 
+      space.ring >= 2 && space.ring <= 4 && space.canProduce
+    )
+    
+    if (availableSpaces.length < players.length) {
+      return {
+        success: false,
+        state: {
+          board,
+          players,
+          currentPlayerIndex: 0,
+          season: 'Spring',
+          year: 1,
+          turn: 1,
+          gamePhase: 'setup',
+          turnPhase: 'movement',
+          energyTaxPaid: false
+        },
+        error: `Not enough starting spaces: need ${players.length}, found ${availableSpaces.length}`
+      }
+    }
+
+    // Shuffle available spaces for random placement
+    const shuffledSpaces = [...availableSpaces].sort(() => Math.random() - 0.5)
+    
+    // Create copies to avoid mutation
+    const newBoard = { ...board, spaces: { ...board.spaces } }
+    const newPlayers = players.map(player => ({ ...player, pieces: [] as CoreGamePiece[] }))
+    
+    // Place starting bears for each player
+    newPlayers.forEach((player, playerIndex) => {
+      const selectedSpace = shuffledSpaces[playerIndex]
+      
+      // Create starting bear with engine defaults
+      const startingBear: CoreGamePiece = {
+        id: `bear-${player.id}-1`,
+        playerId: player.id,
+        spaceId: selectedSpace.id,
+        type: 'bear',
+        health: this.config.pieces.bear.startingHealth,
+        resources: {
+          grains: 0,
+          berries: 0,
+          salmon: 0,
+          honey: 0,
+          bearMeat: 0
+        },
+        energy: this.config.pieces.bear.startingEnergy,
+        fat: this.config.pieces.bear.startingFat,
+        emergencyEnergy: 0,
+        isHibernating: false,
+        movedThisTurn: false  // Bears start without having moved
+      }
+      
+      // Add bear to player's pieces
+      player.pieces.push(startingBear)
+      player.pieceCount.bears = 1
+      
+      // Place bear on the board
+      newBoard.spaces[selectedSpace.id] = {
+        ...newBoard.spaces[selectedSpace.id],
+        piece: startingBear
+      }
+    })
+
+    return {
+      success: true,
+      state: {
+        board: newBoard,
+        players: newPlayers,
+        currentPlayerIndex: 0,
+        season: 'Spring',
+        year: 1,
+        turn: 1,
+        gamePhase: 'playing',
+        turnPhase: 'movement',
+        energyTaxPaid: false
+      },
+      message: `Game initialized with ${players.length} players`
     }
   }
 
@@ -531,6 +701,65 @@ export class GameEngine {
         valid: false, 
         error: `Need ${this.config.hibernation.fatCost} fat to hibernate, have ${piece.fat}` 
       }
+    }
+
+    return { valid: true }
+  }
+
+  validateTrading(state: CoreGameState, action: TradingAction): ValidationResult {
+    // Check if trading is allowed in current phase
+    if (!this.config.trading.allowedPhases.includes(state.turnPhase)) {
+      return { valid: false, error: `Trading not allowed during ${state.turnPhase} phase` }
+    }
+
+    const fromPiece = this.findPiece(state, action.fromPieceId)
+    const toPiece = this.findPiece(state, action.toPieceId)
+
+    if (!fromPiece || !toPiece) {
+      return { valid: false, error: 'One or both pieces not found' }
+    }
+
+    // Check if pieces belong to different players
+    if (fromPiece.playerId === toPiece.playerId) {
+      return { valid: false, error: 'Cannot trade with your own pieces' }
+    }
+
+    // Check if resources are tradable
+    if (!this.config.trading.tradableResources.includes(action.fromResourceType)) {
+      return { valid: false, error: `${action.fromResourceType} cannot be traded` }
+    }
+
+    if (!this.config.trading.tradableResources.includes(action.toResourceType)) {
+      return { valid: false, error: `${action.toResourceType} cannot be traded` }
+    }
+
+    // Check adjacency requirement
+    if (this.config.trading.requireAdjacency) {
+      const fromSpace = this.findPieceSpace(state, action.fromPieceId)
+      const toSpace = this.findPieceSpace(state, action.toPieceId)
+
+      if (!fromSpace || !toSpace) {
+        return { valid: false, error: 'Cannot find spaces for pieces' }
+      }
+
+      const areAdjacent = fromSpace.adjacentSpaces.includes(toSpace.id)
+      if (!areAdjacent) {
+        return { valid: false, error: 'Pieces must be on adjacent spaces to trade' }
+      }
+    }
+
+    // Check trade amounts are positive
+    if (action.fromAmount <= 0 || action.toAmount <= 0) {
+      return { valid: false, error: 'Trade amounts must be positive' }
+    }
+
+    // Check pieces have enough resources
+    if (fromPiece.resources[action.fromResourceType] < action.fromAmount) {
+      return { valid: false, error: `From piece doesn't have enough ${action.fromResourceType}` }
+    }
+
+    if (toPiece.resources[action.toResourceType] < action.toAmount) {
+      return { valid: false, error: `To piece doesn't have enough ${action.toResourceType}` }
     }
 
     return { valid: true }
@@ -625,6 +854,22 @@ export class GameEngine {
       season: seasons[nextIndex],
       year: newYear
     }
+  }
+
+  /**
+   * Reset movement flags for all pieces (called at start of movement phase)
+   */
+  private resetMovementFlags(state: CoreGameState): CoreGameState {
+    const newState = { ...state }
+    newState.players = state.players.map(player => ({
+      ...player,
+      pieces: player.pieces.map(piece => ({
+        ...piece,
+        movedThisTurn: false  // Reset movement flag for new turn
+      }))
+    }))
+    
+    return newState
   }
 
   /**

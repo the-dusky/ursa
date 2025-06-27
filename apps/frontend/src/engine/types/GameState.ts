@@ -32,6 +32,7 @@ export interface CoreGamePiece {
   fat: number
   emergencyEnergy: number
   isHibernating?: boolean
+  movedThisTurn?: boolean  // Track if piece moved this turn for harvest rules
 }
 
 export interface CoreGameSpace {

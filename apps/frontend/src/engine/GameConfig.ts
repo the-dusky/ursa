@@ -83,6 +83,26 @@ export interface GameConfig {
       }
     }
   }
+  pieces: {
+    bear: {
+      startingHealth: number
+      startingEnergy: number
+      startingFat: number
+      maxBears: number
+    }
+    cub: {
+      startingHealth: number
+      startingEnergy: number
+      startingFat: number
+      maxCubs: number
+    }
+  }
+  trading: {
+    allowedPhases: Array<'movement' | 'harvest' | 'eat' | 'hibernation'>
+    tradableResources: Array<'grains' | 'berries' | 'salmon' | 'honey' | 'bearMeat'>
+    maxTradesPerTurn: number
+    requireAdjacency: boolean
+  }
   board: {
     ringConfigs: Array<{
       ring: number
@@ -180,6 +200,26 @@ export const GAME_CONFIG: GameConfig = {
         honey: 0
       }
     }
+  },
+  pieces: {
+    bear: {
+      startingHealth: 10,
+      startingEnergy: 5,
+      startingFat: 0,
+      maxBears: 3
+    },
+    cub: {
+      startingHealth: 5,
+      startingEnergy: 3,
+      startingFat: 0,
+      maxCubs: 6
+    }
+  },
+  trading: {
+    allowedPhases: ['movement'],  // Trading only allowed during movement phase
+    tradableResources: ['grains', 'berries', 'salmon', 'honey', 'bearMeat'],  // All resources except energy/fat
+    maxTradesPerTurn: 3,  // Limit trades per player per turn
+    requireAdjacency: true  // Bears must be on adjacent spaces
   },
   board: {
     ringConfigs: [

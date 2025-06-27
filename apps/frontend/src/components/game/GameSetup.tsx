@@ -40,57 +40,6 @@ export function GameSetup() {
     gamePhase
   } = useGameStore()
 
-  // Check for room in URL on mount and load saved player name
-  useEffect(() => {
-    // Load saved player name
-    const savedName = sessionStorage.getItem('player-name') || ''
-    if (!playerName && savedName) {
-      setPlayerName(savedName)
-    }
-
-    if (searchParams) {
-      const urlRoomId = searchParams.get('room')
-      if (urlRoomId) {
-        setRoomId(urlRoomId)
-        
-        // Auto-rejoin room if we have a saved name (likely a refresh/hot reload)
-        if (savedName && !isConnected) {
-          console.log('Auto-rejoining room after page refresh')
-          handleJoinRoom(urlRoomId, savedName)
-        }
-      }
-    }
-  }, [searchParams, playerName, isConnected])
-
-  // Redirect to game when it starts
-  useEffect(() => {
-    if (gamePhase === 'playing' && isConnected) {
-      // For multiplayer games, we're already on the right page
-      // The main page will show the game instead of setup
-      console.log('Game started - transitioning to game view')
-    }
-  }, [gamePhase, isConnected])
-
-  const handleStartLocalGame = () => {
-    if (selectedPlayerCount === 1) {
-      initializeGameWithPlayerCount(1)
-    } else {
-      // Create multiplayer room for 2-player game
-      if (!playerName.trim()) return
-      
-      const newRoomId = `room-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
-      
-      // Update URL with room ID
-      router.push(`/?room=${newRoomId}`)
-      
-      // Set up room state
-      setRoomId(newRoomId)
-      
-      // Start multiplayer game
-      handleJoinRoom(newRoomId, playerName.trim())
-    }
-  }
-
   const handleJoinRoom = useCallback(async (customRoomId?: string, customPlayerName?: string) => {
     const targetRoomId = customRoomId || roomId.trim()
     const targetPlayerName = customPlayerName || playerName.trim()
@@ -116,6 +65,57 @@ export function GameSetup() {
       setIsJoining(false)
     }
   }, [roomId, playerName, searchParams, router, startMultiplayerGame])
+
+  // Check for room in URL on mount and load saved player name
+  useEffect(() => {
+    // Load saved player name
+    const savedName = sessionStorage.getItem('player-name') || ''
+    if (!playerName && savedName) {
+      setPlayerName(savedName)
+    }
+
+    if (searchParams) {
+      const urlRoomId = searchParams.get('room')
+      if (urlRoomId) {
+        setRoomId(urlRoomId)
+        
+        // Auto-rejoin room if we have a saved name (likely a refresh/hot reload)
+        if (savedName && !isConnected) {
+          console.log('Auto-rejoining room after page refresh')
+          handleJoinRoom(urlRoomId, savedName)
+        }
+      }
+    }
+  }, [searchParams, playerName, isConnected, handleJoinRoom])
+
+  // Redirect to game when it starts
+  useEffect(() => {
+    if (gamePhase === 'playing' && isConnected) {
+      // For multiplayer games, we're already on the right page
+      // The main page will show the game instead of setup
+      console.log('Game started - transitioning to game view')
+    }
+  }, [gamePhase, isConnected])
+
+  const handleStartLocalGame = () => {
+    if (selectedPlayerCount === 1) {
+      initializeGameWithPlayerCount(1)
+    } else {
+      // Create multiplayer room for 2-4 player game
+      if (!playerName.trim()) return
+      
+      const newRoomId = `room-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+      
+      // Update URL with room ID
+      router.push(`/?room=${newRoomId}`)
+      
+      // Set up room state
+      setRoomId(newRoomId)
+      
+      // Start multiplayer game
+      handleJoinRoom(newRoomId, playerName.trim())
+    }
+  }
 
   const generateRoomId = () => {
     const randomId = `room-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
@@ -167,11 +167,31 @@ export function GameSetup() {
                   <span className="text-sm font-medium">2 Players</span>
                   <span className="text-xs text-slate-500">Local Game</span>
                 </Button>
+
+                <Button
+                  variant={selectedPlayerCount === 3 ? "default" : "outline"}
+                  onClick={() => setSelectedPlayerCount(3)}
+                  className="h-20 flex flex-col items-center justify-center space-y-2"
+                >
+                  <span className="text-2xl">🐻🐻🐻</span>
+                  <span className="text-sm font-medium">3 Players</span>
+                  <span className="text-xs text-slate-500">Multiplayer</span>
+                </Button>
+
+                <Button
+                  variant={selectedPlayerCount === 4 ? "default" : "outline"}
+                  onClick={() => setSelectedPlayerCount(4)}
+                  className="h-20 flex flex-col items-center justify-center space-y-2"
+                >
+                  <span className="text-2xl">🐻🐻🐻🐻</span>
+                  <span className="text-sm font-medium">4 Players</span>
+                  <span className="text-xs text-slate-500">Full House</span>
+                </Button>
               </div>
             </div>
 
-            {/* Player Name Input for 2-Player Games */}
-            {selectedPlayerCount === 2 && (
+            {/* Player Name Input for Multiplayer Games */}
+            {selectedPlayerCount >= 2 && (
               <div className="space-y-2">
                 <label className="text-sm font-medium">Your Name</label>
                 <Input

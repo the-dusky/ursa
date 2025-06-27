@@ -7,6 +7,7 @@
  */
 
 import { GameEngine } from '../../engine/GameEngine'
+import { StateAdapter } from '../../engine/StateAdapter'
 import { ActionCreators } from '../../engine/types'
 import type { 
   ResourceType, 
@@ -25,97 +26,7 @@ const gameEngine = new GameEngine()
  */
 function convertToEngineState(): CoreGameState {
   const state = useGameStore.getState()
-  
-  // Convert the gameStore state to the engine's expected format
-  return {
-    board: {
-      spaces: Object.fromEntries([
-        // Regular spaces
-        ...Object.entries(state.board.spaces).map(([id, space]) => [
-          id,
-          {
-            id: space.id,
-            ring: space.ring,
-            position: space.position,
-            angle: space.angle,
-            quadrant: space.quadrant,
-            subArea: space.subArea,
-            piece: space.piece ? {
-              id: space.piece.id,
-              playerId: space.piece.playerId,
-              spaceId: space.piece.spaceId,
-              type: space.piece.type,
-              health: space.piece.health,
-              resources: space.piece.resources,
-              energy: space.piece.energy,
-              fat: space.piece.fat,
-              emergencyEnergy: space.piece.emergencyEnergy,
-              isHibernating: space.piece.isHibernating
-            } : null,
-            canProduce: space.canProduce,
-            hasHoney: space.hasHoney,
-            adjacentSpaces: space.adjacentSpaces
-          }
-        ]),
-        // Bridge spaces
-        ...(state.board.bridges ? Object.entries(state.board.bridges).map(([id, space]) => [
-          id,
-          {
-            id: space.id,
-            ring: space.ring,
-            position: space.position,
-            angle: space.angle,
-            quadrant: space.quadrant,
-            subArea: space.subArea,
-            piece: space.piece ? {
-              id: space.piece.id,
-              playerId: space.piece.playerId,
-              spaceId: space.piece.spaceId,
-              type: space.piece.type,
-              health: space.piece.health,
-              resources: space.piece.resources,
-              energy: space.piece.energy,
-              fat: space.piece.fat,
-              emergencyEnergy: space.piece.emergencyEnergy,
-              isHibernating: space.piece.isHibernating
-            } : null,
-            canProduce: space.canProduce,
-            hasHoney: space.hasHoney,
-            adjacentSpaces: space.adjacentSpaces
-          }
-        ]) : [])
-      ]),
-      rings: state.board.rings,
-      bridges: state.board.bridges || {},
-      rotations: state.board.rotations || [0, 0, 0, 0, 0]
-    },
-    players: state.players.map(player => ({
-      id: player.id,
-      name: player.name,
-      color: player.color,
-      pieces: player.pieces.map(piece => ({
-        id: piece.id,
-        playerId: piece.playerId,
-        spaceId: piece.spaceId,
-        type: piece.type,
-        health: piece.health,
-        resources: piece.resources,
-        energy: piece.energy,
-        fat: piece.fat,
-        emergencyEnergy: piece.emergencyEnergy,
-        isHibernating: piece.isHibernating
-      })),
-      pieceCount: player.pieceCount,
-      score: player.score
-    })),
-    currentPlayerIndex: state.currentPlayerIndex,
-    season: state.season,
-    year: state.year,
-    turn: state.turn,
-    gamePhase: state.gamePhase,
-    turnPhase: state.turnPhase,
-    energyTaxPaid: state.energyTaxPaid
-  }
+  return StateAdapter.toEngineState(state)
 }
 
 /**
@@ -295,6 +206,8 @@ export const useGameActions = () => {
           return gameEngine.validateEating(currentState, action).valid
         case 'hibernation':
           return gameEngine.validateHibernation(currentState, action).valid
+        case 'trading':
+          return gameEngine.validateTrading(currentState, action).valid
         default:
           return false
       }
@@ -332,6 +245,64 @@ export const useGameActions = () => {
         const space = currentState.board.spaces[spaceId]
         return space && !space.piece
       })
+    },
+
+    /**
+     * Execute a trade between two pieces
+     */
+    trade: (fromPieceId: string, toPieceId: string, fromResourceType: ResourceType, toResourceType: ResourceType, fromAmount: number, toAmount: number): boolean => {
+      const currentState = convertToEngineState()
+      const currentPlayer = currentState.players[currentState.currentPlayerIndex]
+      
+      const action = ActionCreators.trading(
+        currentPlayer.id, 
+        fromPieceId, 
+        toPieceId, 
+        fromResourceType, 
+        toResourceType, 
+        fromAmount, 
+        toAmount
+      )
+      
+      const result = gameEngine.executeTrading(currentState, action)
+      return applyEngineResult(result)
+    },
+
+    /**
+     * Get pieces that can trade with a given piece (adjacent pieces from other players)
+     */
+    getAvailableTradePartners: (pieceId: string): Array<{ pieceId: string; playerId: string | number; spaceId: string }> => {
+      const currentState = convertToEngineState()
+      const piece = gameEngine['findPiece'](currentState, pieceId)
+      
+      if (!piece) return []
+      
+      const pieceSpace = gameEngine['findPieceSpace'](currentState, pieceId)
+      if (!pieceSpace) return []
+      
+      const tradePartners: Array<{ pieceId: string; playerId: string | number; spaceId: string }> = []
+      
+      // Check all adjacent spaces for pieces from other players
+      pieceSpace.adjacentSpaces.forEach(spaceId => {
+        const space = currentState.board.spaces[spaceId]
+        if (space?.piece && space.piece.playerId !== piece.playerId) {
+          tradePartners.push({
+            pieceId: space.piece.id,
+            playerId: space.piece.playerId,
+            spaceId: space.id
+          })
+        }
+      })
+      
+      return tradePartners
+    },
+
+    /**
+     * Initialize game with players using engine setup logic
+     */
+    initializeGameWithPlayers: (players: CoreGameState['players'], board: CoreGameState['board']): boolean => {
+      const result = gameEngine.initializeGameWithPlayers(board, players)
+      return applyEngineResult(result)
     }
   }
 }

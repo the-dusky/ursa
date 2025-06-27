@@ -62,6 +62,16 @@ export interface DeathAction extends BaseAction {
   pieceId: string
 }
 
+export interface TradingAction extends BaseAction {
+  type: 'trading'
+  fromPieceId: string
+  toPieceId: string
+  fromResourceType: ResourceType
+  toResourceType: ResourceType
+  fromAmount: number
+  toAmount: number
+}
+
 /**
  * Union type of all possible game actions
  */
@@ -75,6 +85,7 @@ export type GameAction =
   | TurnAdvancementAction
   | PhaseAdvancementAction
   | DeathAction
+  | TradingAction
 
 /**
  * Action creators - helper functions to create properly typed actions
@@ -137,5 +148,24 @@ export const ActionCreators = {
     type: 'death',
     playerId,
     pieceId
+  }),
+
+  trading: (
+    playerId: string | number, 
+    fromPieceId: string, 
+    toPieceId: string, 
+    fromResourceType: ResourceType, 
+    toResourceType: ResourceType, 
+    fromAmount: number, 
+    toAmount: number
+  ): TradingAction => ({
+    type: 'trading',
+    playerId,
+    fromPieceId,
+    toPieceId,
+    fromResourceType,
+    toResourceType,
+    fromAmount,
+    toAmount
   })
 }

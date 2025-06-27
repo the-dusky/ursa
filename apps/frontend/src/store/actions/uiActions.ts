@@ -223,6 +223,35 @@ export const useUIActions = () => {
      */
     toggleMultiplayer: () => {
       uiStore.toggleMultiplayerControls()
+    },
+
+    /**
+     * Execute trade with UI feedback
+     */
+    tradeWithFeedback: (fromPieceId: string, toPieceId: string, fromResourceType: string, toResourceType: string, fromAmount: number, toAmount: number) => {
+      const success = gameActions.trade(
+        fromPieceId, 
+        toPieceId, 
+        fromResourceType as 'grains' | 'berries' | 'salmon' | 'honey' | 'bearMeat', 
+        toResourceType as 'grains' | 'berries' | 'salmon' | 'honey' | 'bearMeat', 
+        fromAmount, 
+        toAmount
+      )
+      
+      if (success) {
+        uiStore.addLogMessage(`🤝 Traded ${fromAmount} ${fromResourceType} for ${toAmount} ${toResourceType}`)
+        // Clear selections after successful trade
+        uiStore.clearSelections()
+      }
+      
+      return success
+    },
+
+    /**
+     * Get available trade partners for a piece
+     */
+    getTradePartners: (pieceId: string) => {
+      return gameActions.getAvailableTradePartners(pieceId)
     }
   }
 }
@@ -251,6 +280,8 @@ export const useUIInteractions = () => {
     onPayTax: uiActions.payEnergyTaxWithFeedback,
     onConvertFat: uiActions.convertFatWithFeedback,
     onDeath: uiActions.deathWithFeedback,
+    onTrade: uiActions.tradeWithFeedback,
+    getTradePartners: uiActions.getTradePartners,
     
     // Turn management
     onAdvanceTurn: uiActions.advanceTurnWithCleanup,
