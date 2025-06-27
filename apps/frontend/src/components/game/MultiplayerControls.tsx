@@ -26,7 +26,7 @@ export function MultiplayerControls() {
     playerName,
     playerNumber,
     roomPlayerCount,
-    startMultiplayerGame,
+    joinMultiplayerRoom,
     disconnectFromRoom
   } = useGameStore()
   
@@ -52,7 +52,7 @@ export function MultiplayerControls() {
     try {
       const newRoomId = generateRoomId()
       const playerId = `player-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
-      await startMultiplayerGame(newRoomId, inputPlayerName.trim(), playerId)
+      await joinMultiplayerRoom(newRoomId, inputPlayerName.trim(), playerId)
       setShowCreateDialog(false)
       setInputPlayerName('')
     } catch (error) {
@@ -72,7 +72,7 @@ export function MultiplayerControls() {
     setIsLoading(true)
     try {
       const playerId = `player-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
-      await startMultiplayerGame(inputRoomId.trim(), inputPlayerName.trim(), playerId)
+      await joinMultiplayerRoom(inputRoomId.trim(), inputPlayerName.trim(), playerId)
       setShowJoinDialog(false)
       setInputRoomId('')
       setInputPlayerName('')

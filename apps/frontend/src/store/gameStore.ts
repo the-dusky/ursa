@@ -126,7 +126,8 @@ export interface CleanGameState {
   initializeGameWithPlayerCount: (playerCount: number) => void
   initializeMultiplayerGame: (multiplayerPlayers: { [playerId: string]: { name: string; playerNumber: number } }) => void
   createRoomWithSlots: (roomId: string, playerCount: number, creatorName: string, creatorId: string) => Promise<{ [playerNumber: number]: { id: string; inviteLink: string } }>
-  startMultiplayerGame: (roomId: string, playerName: string, playerId: string) => Promise<void>
+  joinMultiplayerRoom: (roomId: string, playerName: string, playerId: string) => Promise<void>
+  startGame: () => void
   disconnectFromRoom: () => void
   
   // Engine-powered actions
@@ -532,9 +533,12 @@ export const useGameStore = create<CleanGameState>()(
       // Multiplayer setup
       createRoomWithSlots: async (roomId: string, playerCount: number, creatorName: string, creatorId: string) => {
         try {
-          console.log(`🏠 Creating room slots for ${roomId} with ${playerCount} players`)
+          console.log(`🏠 Creating room ${roomId} with ${playerCount} player slots`)
           
-          // Create player slots (just the metadata, don't create Y.js connection yet)
+          // Clean up any existing connections first
+          cleanupConnection()
+          
+          // Create player slots
           const playerSlots: { [playerNumber: number]: { id: string; reserved: boolean; joinedAt?: number } } = {}
           
           // Player 1 is the room creator
@@ -552,16 +556,42 @@ export const useGameStore = create<CleanGameState>()(
             }
           }
           
-          // Store slots in a global variable to be used when Y.js connection is made
-          const roomConfig = {
+          // Initialize Y.js connection and store room config on server
+          const wsUrl = process.env.NODE_ENV === 'development' 
+            ? (process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:1234')
+            : (process.env.NEXT_PUBLIC_WS_URL || 'wss://ursa-game-server.up.railway.app')
+            
+          console.log(`🔌 Creating Y.js room at: ${wsUrl}`)
+          
+          yjsDoc = new Y.Doc()
+          yjsProvider = new WebsocketProvider(wsUrl, roomId, yjsDoc)
+          
+          // Set up connection handlers
+          yjsProvider.on('status', (event: { status: string }) => {
+            console.log(`🔌 Y.js connection status: ${event.status}`)
+            if (event.status === 'connected') {
+              console.log('🔓 Y.js connected - room creation complete')
+            } else if (event.status === 'disconnected') {
+              console.log('🔓 Y.js disconnected during room creation')
+            }
+          })
+          
+          // Set up Y.js maps and store room configuration
+          gameStateMap = yjsDoc.getMap('gameState')
+          const roomConfigMap = yjsDoc.getMap('roomConfig')
+          
+          // Store room configuration in Y.js (this goes to the server)
+          roomConfigMap.set('playerCount', playerCount)
+          roomConfigMap.set('createdAt', Date.now())
+          roomConfigMap.set('createdBy', creatorName)
+          roomConfigMap.set('playerSlots', playerSlots)
+          roomConfigMap.set('gameStarted', false)
+          
+          console.log('🏠 Room config stored in Y.js:', {
             playerCount,
-            createdAt: Date.now(),
             createdBy: creatorName,
             playerSlots
-          }
-          
-          // Store room config in localStorage temporarily (Y.js will persist it properly)
-          localStorage.setItem(`room-${roomId}-config`, JSON.stringify(roomConfig))
+          })
           
           // Generate invite links for each slot
           const inviteLinks: { [playerNumber: number]: { id: string; inviteLink: string } } = {}
@@ -581,13 +611,14 @@ export const useGameStore = create<CleanGameState>()(
           
         } catch (error) {
           console.error('Failed to create room with slots:', error)
+          cleanupConnection()
           throw error
         }
       },
 
-      startMultiplayerGame: async (roomId: string, playerName: string, playerId: string) => {
+      joinMultiplayerRoom: async (roomId: string, playerName: string, playerId: string) => {
         try {
-          console.log(`🔌 startMultiplayerGame called: ${roomId}, ${playerName}, ${playerId}`)
+          console.log(`🔌 Joining multiplayer room: ${roomId} as ${playerName} (${playerId})`)
           
           // Prevent multiple simultaneous connection attempts
           if (isConnecting) {
@@ -602,64 +633,59 @@ export const useGameStore = create<CleanGameState>()(
           }
           
           // Check if already connected to different room
-          if (get().isConnected) {
-            console.log('🔌 Already connected to different room, skipping to prevent conflicts')
-            return
+          if (get().isConnected && get().roomId !== roomId) {
+            console.log('🔌 Connected to different room, cleaning up first')
+            cleanupConnection()
           }
           
           // Set connecting flag
           isConnecting = true
           console.log('🔒 Setting connecting flag')
           
-          // Cleanup any existing connections
-          cleanupConnection()
+          // Initialize Y.js connection if not already connected to this room
+          if (!yjsDoc || !yjsProvider || get().roomId !== roomId) {
+            console.log('🔌 Creating new Y.js connection')
+            
+            // Cleanup any existing connections
+            cleanupConnection()
+            
+            // Initialize Y.js with environment-specific WebSocket URL
+            const wsUrl = process.env.NODE_ENV === 'development' 
+              ? (process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:1234')
+              : (process.env.NEXT_PUBLIC_WS_URL || 'wss://ursa-game-server.up.railway.app')
+            
+            console.log(`🔌 Creating new WebSocket connection to: ${wsUrl}`)
+            console.log(`🎮 Player ID: ${playerId}`)
+            console.log(`🏠 Room ID: ${roomId}`)
+            
+            yjsDoc = new Y.Doc()
+            yjsProvider = new WebsocketProvider(wsUrl, roomId, yjsDoc)
+            
+            // Monitor connection state
+            yjsProvider.on('status', (event: { status: string }) => {
+              console.log(`🔌 Y.js connection status: ${event.status}`)
+              if (event.status === 'connected') {
+                isConnecting = false
+                console.log('🔓 Clearing connecting flag - connected')
+              } else if (event.status === 'disconnected') {
+                isConnecting = false
+                console.log('🔓 Clearing connecting flag - disconnected')
+              }
+            })
+            
+            gameStateMap = yjsDoc.getMap('gameState')
+          } else {
+            console.log('🔌 Reusing existing Y.js connection')
+          }
           
-          // Initialize Y.js with environment-specific WebSocket URL
-          yjsDoc = new Y.Doc()
-          const wsUrl = process.env.NEXT_PUBLIC_YJS_SERVER || 'ws://localhost:1234'
-          
-          console.log(`🔌 Creating new WebSocket connection to: ${wsUrl}`)
-          console.log(`🎮 Player ID: ${playerId}`)
-          console.log(`🏠 Room ID: ${roomId}`)
-          
-          yjsProvider = new WebsocketProvider(wsUrl, roomId, yjsDoc)
-          
-          // Monitor connection state
-          yjsProvider.on('status', (event: { status: string }) => {
-            console.log(`🔌 Y.js connection status: ${event.status}`)
-            if (event.status === 'connected') {
-              isConnecting = false
-              console.log('🔓 Clearing connecting flag - connected')
-            } else if (event.status === 'disconnected') {
-              isConnecting = false
-              console.log('🔓 Clearing connecting flag - disconnected')
-            }
-          })
-          gameStateMap = yjsDoc.getMap('gameState')
           const playersMap = yjsDoc.getMap('players')
+          const roomConfigMap = yjsDoc.getMap('roomConfig')
 
           // Wait a moment for Y.js to sync existing data
           await new Promise(resolve => setTimeout(resolve, 500))
 
-          // Set up room config if this is the room creator
-          const roomConfigMap = yjsDoc.getMap('roomConfig')
-          let playerSlots = roomConfigMap.get('playerSlots')
-          
-          // If no room config exists, check if we have it stored locally (room creator)
-          if (!playerSlots) {
-            const storedConfig = localStorage.getItem(`room-${roomId}-config`)
-            if (storedConfig) {
-              console.log('🏠 Setting up room config from localStorage')
-              const roomConfig = JSON.parse(storedConfig)
-              roomConfigMap.set('playerCount', roomConfig.playerCount)
-              roomConfigMap.set('createdAt', roomConfig.createdAt)
-              roomConfigMap.set('createdBy', roomConfig.createdBy)
-              roomConfigMap.set('playerSlots', roomConfig.playerSlots)
-              playerSlots = roomConfig.playerSlots
-              // Clean up localStorage
-              localStorage.removeItem(`room-${roomId}-config`)
-            }
-          }
+          // Get room configuration from Y.js server
+          const playerSlots = roomConfigMap.get('playerSlots')
 
           // Validate player ID against room slots
           
@@ -828,6 +854,36 @@ export const useGameStore = create<CleanGameState>()(
 
         // Use centralized cleanup
         cleanupConnection()
+      },
+
+      startGame: () => {
+        const state = get()
+        
+        if (!state.isMultiplayer || !state.isConnected) {
+          console.warn('Cannot start game - not in multiplayer room')
+          return
+        }
+        
+        if (state.playerNumber !== 1) {
+          console.warn('Only room creator (Player 1) can start the game')
+          return
+        }
+        
+        try {
+          console.log('🎮 Starting multiplayer game')
+          
+          // Mark game as started in Y.js
+          if (yjsDoc) {
+            const roomConfigMap = yjsDoc.getMap('roomConfig')
+            roomConfigMap.set('gameStarted', true)
+            roomConfigMap.set('startedAt', Date.now())
+            
+            console.log('🎮 Game started - notifying all players')
+          }
+          
+        } catch (error) {
+          console.error('Failed to start game:', error)
+        }
 
         set({
           isMultiplayer: false,

@@ -52,7 +52,7 @@ export function GameSetup() {
   const { 
     initializeGameWithPlayerCount, 
     createRoomWithSlots,
-    startMultiplayerGame, 
+    joinMultiplayerRoom, 
     isConnected, 
     isMultiplayer,
     roomPlayerCount, 
@@ -83,7 +83,7 @@ export function GameSetup() {
       // Use provided player ID or generate one
       const playerId = customPlayerId || generatePlayerId()
       
-      await startMultiplayerGame(targetRoomId, targetPlayerName, playerId)
+      await joinMultiplayerRoom(targetRoomId, targetPlayerName, playerId)
       
       // Only update URL if joining an existing room (not creating)
       if (!isCreatingRoom && !searchParams?.get('room')) {
@@ -94,7 +94,7 @@ export function GameSetup() {
       setJoinError(error instanceof Error ? error.message : 'Failed to join room')
       setIsJoining(false)
     }
-  }, [roomId, playerName, searchParams, router, startMultiplayerGame])
+  }, [roomId, playerName, searchParams, router, joinMultiplayerRoom])
 
   // Set origin on client side and load created rooms
   useEffect(() => {
@@ -150,7 +150,7 @@ export function GameSetup() {
         const newRoomId = `room-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
         const creatorId = generatePlayerId()
         
-        // Create room with pre-assigned player slots
+        // Create room with pre-assigned player slots (this creates Y.js connection)
         const inviteLinks = await createRoomWithSlots(newRoomId, selectedPlayerCount, playerName.trim(), creatorId)
         
         // Add to created rooms list with additional metadata
@@ -162,8 +162,8 @@ export function GameSetup() {
         // Set up room state
         setRoomId(newRoomId)
         
-        // Join the room directly with the creator ID instead of redirecting
-        await handleJoinRoom(newRoomId, playerName.trim(), true, creatorId)
+        // Join the room as the creator (Y.js connection already exists)
+        await joinMultiplayerRoom(newRoomId, playerName.trim(), creatorId)
         
       } catch (error) {
         console.error('Failed to create room:', error)
@@ -171,7 +171,8 @@ export function GameSetup() {
         const newRoomId = `room-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
         addCreatedRoom(newRoomId, `${playerName}'s Game`)
         setRoomId(newRoomId)
-        handleJoinRoom(newRoomId, playerName.trim(), true)
+        const fallbackId = generatePlayerId()
+        await joinMultiplayerRoom(newRoomId, playerName.trim(), fallbackId)
       }
     }
   }
