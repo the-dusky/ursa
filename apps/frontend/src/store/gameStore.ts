@@ -125,6 +125,7 @@ export interface CleanGameState {
   initializeGame: () => void
   initializeGameWithPlayerCount: (playerCount: number) => void
   initializeMultiplayerGame: (multiplayerPlayers: { [playerId: string]: { name: string; playerNumber: number } }) => void
+  createRoomWithSlots: (roomId: string, playerCount: number, creatorName: string, creatorId: string) => Promise<{ [playerNumber: number]: { id: string; inviteLink: string } }>
   startMultiplayerGame: (roomId: string, playerName: string, playerId: string) => Promise<void>
   disconnectFromRoom: () => void
   
@@ -529,6 +530,80 @@ export const useGameStore = create<CleanGameState>()(
       },
 
       // Multiplayer setup
+      createRoomWithSlots: async (roomId: string, playerCount: number, creatorName: string, creatorId: string) => {
+        try {
+          console.log(`🏠 Creating room ${roomId} for ${playerCount} players`)
+          
+          // Create player slots
+          const playerSlots: { [playerNumber: number]: { id: string; reserved: boolean; joinedAt?: number } } = {}
+          
+          // Player 1 is the room creator
+          playerSlots[1] = {
+            id: creatorId,
+            reserved: true,
+            joinedAt: Date.now()
+          }
+          
+          // Generate IDs for remaining slots
+          for (let i = 2; i <= playerCount; i++) {
+            playerSlots[i] = {
+              id: `player-${Date.now()}-${Math.random().toString(36).substring(2, 8)}-slot${i}`,
+              reserved: false
+            }
+          }
+          
+          // Initialize Y.js connection for room
+          const wsUrl = process.env.NODE_ENV === 'development' 
+            ? (process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:1234')
+            : (process.env.NEXT_PUBLIC_WS_URL || 'wss://ursa-game-server.up.railway.app')
+            
+          console.log(`🔌 Connecting to WebSocket: ${wsUrl}`)
+          
+          yjsDoc = new Y.Doc()
+          yjsProvider = new WebsocketProvider(wsUrl, roomId, yjsDoc)
+          
+          // Set up Y.js maps
+          gameStateMap = yjsDoc.getMap('gameState')
+          const playersMap = yjsDoc.getMap('players')
+          const roomConfigMap = yjsDoc.getMap('roomConfig')
+          
+          // Store room configuration with player slots
+          roomConfigMap.set('playerCount', playerCount)
+          roomConfigMap.set('createdAt', Date.now())
+          roomConfigMap.set('createdBy', creatorName)
+          roomConfigMap.set('playerSlots', playerSlots)
+          
+          // Add creator to players map
+          playersMap.set(creatorId, {
+            id: creatorId,
+            name: creatorName,
+            playerNumber: 1,
+            joinedAt: Date.now(),
+            isActive: true
+          })
+          
+          // Generate invite links for each slot
+          const inviteLinks: { [playerNumber: number]: { id: string; inviteLink: string } } = {}
+          const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
+          
+          for (let playerNumber = 1; playerNumber <= playerCount; playerNumber++) {
+            const slot = playerSlots[playerNumber]
+            inviteLinks[playerNumber] = {
+              id: slot.id,
+              inviteLink: `${baseUrl}/?room=${roomId}&player=${slot.id}`
+            }
+          }
+          
+          console.log('🎫 Generated invite links:', inviteLinks)
+          
+          return inviteLinks
+          
+        } catch (error) {
+          console.error('Failed to create room with slots:', error)
+          throw error
+        }
+      },
+
       startMultiplayerGame: async (roomId: string, playerName: string, playerId: string) => {
         try {
           console.log(`🔌 startMultiplayerGame called: ${roomId}, ${playerName}, ${playerId}`)
@@ -585,6 +660,29 @@ export const useGameStore = create<CleanGameState>()(
           // Wait a moment for Y.js to sync existing data
           await new Promise(resolve => setTimeout(resolve, 500))
 
+          // Validate player ID against room slots
+          const roomConfigMap = yjsDoc.getMap('roomConfig')
+          const playerSlots = roomConfigMap.get('playerSlots')
+          
+          if (playerSlots) {
+            console.log('🎫 Validating player ID against room slots:', playerSlots)
+            
+            // Find which slot this player ID belongs to
+            let assignedPlayerNumber: number | null = null
+            for (const [slotNumber, slotInfo] of Object.entries(playerSlots as { [key: string]: { id: string; reserved: boolean; joinedAt?: number } })) {
+              if (slotInfo.id === playerId) {
+                assignedPlayerNumber = parseInt(slotNumber)
+                break
+              }
+            }
+            
+            if (assignedPlayerNumber === null) {
+              throw new Error(`Invalid player ID - you don't have permission to join this room. Please use the correct invite link.`)
+            }
+            
+            console.log(`✅ Player ID ${playerId} validated for slot ${assignedPlayerNumber}`)
+          }
+
           // Check if room is full
           const existingPlayers = playersMap.toJSON()
           console.log('All players in room:', existingPlayers)
@@ -597,25 +695,36 @@ export const useGameStore = create<CleanGameState>()(
             throw new Error('Room is full - maximum 4 players allowed')
           }
 
-          // Determine player number based on existing players
+          // Determine player number based on validated slot assignment
           let playerNumber = 1
           
-          // If this player is reconnecting, keep their number
-          if (existingPlayers[playerId] && existingPlayers[playerId].isActive) {
-            playerNumber = existingPlayers[playerId].playerNumber ?? 1
-            console.log(`Player ${playerId} reconnecting as Player ${playerNumber}`)
-          } else {
-            // Assign the lowest available player number
-            const takenNumbers = activeExistingPlayers.map((p: { playerNumber?: number }) => p.playerNumber ?? 1)
-            console.log('Taken player numbers:', takenNumbers)
-            
-            for (let i = 1; i <= 4; i++) {
-              if (!takenNumbers.includes(i)) {
-                playerNumber = i
+          if (playerSlots) {
+            // Use the pre-assigned slot number from validation
+            for (const [slotNumber, slotInfo] of Object.entries(playerSlots as { [key: string]: { id: string; reserved: boolean; joinedAt?: number } })) {
+              if (slotInfo.id === playerId) {
+                playerNumber = parseInt(slotNumber)
+                console.log(`Using pre-assigned slot: Player ${playerNumber}`)
                 break
               }
             }
-            console.log(`Assigning new player ${playerId} as Player ${playerNumber}`)
+          } else {
+            // Fallback to old logic for rooms created before slot system
+            if (existingPlayers[playerId] && existingPlayers[playerId].isActive) {
+              playerNumber = existingPlayers[playerId].playerNumber ?? 1
+              console.log(`Player ${playerId} reconnecting as Player ${playerNumber}`)
+            } else {
+              // Assign the lowest available player number
+              const takenNumbers = activeExistingPlayers.map((p: { playerNumber?: number }) => p.playerNumber ?? 1)
+              console.log('Taken player numbers:', takenNumbers)
+              
+              for (let i = 1; i <= 4; i++) {
+                if (!takenNumbers.includes(i)) {
+                  playerNumber = i
+                  break
+                }
+              }
+              console.log(`Assigning new player ${playerId} as Player ${playerNumber}`)
+            }
           }
 
           // Add this player to the room

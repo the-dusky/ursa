@@ -28,6 +28,17 @@ function generatePlayerId(): string {
   return playerId
 }
 
+// Get invite links for a room from localStorage
+function getRoomInviteLinks(roomId: string): { [playerNumber: number]: { id: string; inviteLink: string } } | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const stored = localStorage.getItem(`room-${roomId}-invites`)
+    return stored ? JSON.parse(stored) : null
+  } catch {
+    return null
+  }
+}
+
 export function GameSetup() {
   const [selectedPlayerCount, setSelectedPlayerCount] = useState(1)
   const [roomId, setRoomId] = useState('')
@@ -39,6 +50,7 @@ export function GameSetup() {
   const searchParams = useSearchParams()
   const { 
     initializeGameWithPlayerCount, 
+    createRoomWithSlots,
     startMultiplayerGame, 
     isConnected, 
     isMultiplayer,
@@ -55,7 +67,7 @@ export function GameSetup() {
     loadCreatedRooms
   } = useGameStore()
 
-  const handleJoinRoom = useCallback(async (customRoomId?: string, customPlayerName?: string, isCreatingRoom?: boolean) => {
+  const handleJoinRoom = useCallback(async (customRoomId?: string, customPlayerName?: string, isCreatingRoom?: boolean, customPlayerId?: string) => {
     const targetRoomId = customRoomId || roomId.trim()
     const targetPlayerName = customPlayerName || playerName.trim()
     
@@ -66,8 +78,8 @@ export function GameSetup() {
       // Store player name for future sessions
       sessionStorage.setItem('player-name', targetPlayerName)
       
-      // Generate/get player session ID
-      const playerId = generatePlayerId()
+      // Use provided player ID or generate one
+      const playerId = customPlayerId || generatePlayerId()
       
       await startMultiplayerGame(targetRoomId, targetPlayerName, playerId)
       
@@ -123,23 +135,41 @@ export function GameSetup() {
     }
   }, [gamePhase, isConnected])
 
-  const handleStartLocalGame = () => {
+  const handleStartLocalGame = async () => {
     if (selectedPlayerCount === 1) {
       initializeGameWithPlayerCount(1)
     } else {
       // Create multiplayer room for 2-4 player game
       if (!playerName.trim()) return
       
-      const newRoomId = `room-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
-      
-      // Add to created rooms list
-      addCreatedRoom(newRoomId, `${playerName}'s Game`)
-      
-      // Set up room state
-      setRoomId(newRoomId)
-      
-      // Start multiplayer game (don't redirect when creating)
-      handleJoinRoom(newRoomId, playerName.trim(), true)
+      try {
+        const newRoomId = `room-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+        const creatorId = generatePlayerId()
+        
+        // Create room with pre-assigned player slots
+        const inviteLinks = await createRoomWithSlots(newRoomId, selectedPlayerCount, playerName.trim(), creatorId)
+        
+        // Add to created rooms list with additional metadata
+        addCreatedRoom(newRoomId, `${playerName}'s Game`)
+        
+        // Store invite links for sharing
+        localStorage.setItem(`room-${newRoomId}-invites`, JSON.stringify(inviteLinks))
+        
+        // Set up room state
+        setRoomId(newRoomId)
+        
+        // Redirect to the room with the creator's player ID
+        const creatorLink = inviteLinks[1].inviteLink
+        router.push(creatorLink)
+        
+      } catch (error) {
+        console.error('Failed to create room:', error)
+        // Fall back to old method if needed
+        const newRoomId = `room-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+        addCreatedRoom(newRoomId, `${playerName}'s Game`)
+        setRoomId(newRoomId)
+        handleJoinRoom(newRoomId, playerName.trim(), true)
+      }
     }
   }
 
@@ -191,22 +221,61 @@ export function GameSetup() {
                   </div>
                 </div>
                 
-                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                  <p className="text-sm text-blue-700 dark:text-blue-300 mb-2">
-                    Share this link to invite others:
-                  </p>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="text"
-                      value={origin ? `${origin}/?room=${currentRoomId}` : `Loading...`}
-                      readOnly
-                      className="flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-800 border rounded-md"
-                    />
-                    <Button onClick={copyRoomLink} variant="outline" size="sm">
-                      Copy
-                    </Button>
-                  </div>
-                </div>
+                {/* Show player-specific invite links if available */}
+                {(() => {
+                  const inviteLinks = getRoomInviteLinks(currentRoomId)
+                  if (inviteLinks && Object.keys(inviteLinks).length > 1) {
+                    return (
+                      <div className="space-y-3">
+                        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                          🎫 Player-specific invite links:
+                        </p>
+                        {Object.entries(inviteLinks).slice(1).map(([playerNum, linkInfo]) => (
+                          <div key={playerNum} className="p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-sm font-medium">Player {playerNum}</span>
+                              <Button
+                                onClick={() => {
+                                  navigator.clipboard.writeText(linkInfo.inviteLink)
+                                }}
+                                variant="outline"
+                                size="sm"
+                                className="text-xs"
+                              >
+                                📋 Copy
+                              </Button>
+                            </div>
+                            <input
+                              type="text"
+                              value={linkInfo.inviteLink}
+                              readOnly
+                              className="w-full px-2 py-1 text-xs bg-white dark:bg-slate-700 border rounded font-mono"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  } else {
+                    return (
+                      <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                        <p className="text-sm text-blue-700 dark:text-blue-300 mb-2">
+                          Share this link to invite others:
+                        </p>
+                        <div className="flex items-center space-x-2">
+                          <input
+                            type="text"
+                            value={origin ? `${origin}/?room=${currentRoomId}` : `Loading...`}
+                            readOnly
+                            className="flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-800 border rounded-md"
+                          />
+                          <Button onClick={copyRoomLink} variant="outline" size="sm">
+                            Copy
+                          </Button>
+                        </div>
+                      </div>
+                    )
+                  }
+                })()}
               </div>
             </CardContent>
           </Card>
@@ -217,6 +286,7 @@ export function GameSetup() {
 
   // Show simplified join interface if accessing a room via URL
   const urlRoomId = searchParams?.get('room')
+  const urlPlayerId = searchParams?.get('player')
   if (urlRoomId && !isConnected) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center p-4">
@@ -255,7 +325,11 @@ export function GameSetup() {
                 </div>
                 
                 <Button 
-                  onClick={() => handleJoinRoom(urlRoomId, playerName.trim())}
+                  onClick={() => {
+                    // Use URL player ID if provided, otherwise generate one
+                    const playerId = urlPlayerId || generatePlayerId()
+                    handleJoinRoom(urlRoomId, playerName.trim(), false, playerId)
+                  }}
                   disabled={!playerName.trim() || isJoining}
                   className="w-full h-12 text-lg font-semibold"
                   size="lg"
