@@ -89,6 +89,13 @@ export interface DiceTrayState {
 /**
  * Clean Game State - Only game data, no UI state
  */
+export interface CreatedRoom {
+  id: string
+  name: string
+  createdAt: string
+  lastUsed: string
+}
+
 export interface CleanGameState {
   // Core game state
   board: Board
@@ -111,6 +118,7 @@ export interface CleanGameState {
   playerNumber: number | null
   roomPlayerCount: number
   maxRoomPlayers: number
+  createdRooms: CreatedRoom[]
 
   // Game actions - delegate to engine
   initializeGame: () => void
@@ -136,6 +144,14 @@ export interface CleanGameState {
   
   // Multiplayer sync actions
   syncWithYjs: () => void
+  
+  // Room management actions
+  addCreatedRoom: (roomId: string, roomName: string) => void
+  removeCreatedRoom: (roomId: string) => void
+  updateRoomLastUsed: (roomId: string) => void
+  
+  // Room validation
+  isValidPlayerInRoom: () => boolean
 }
 
 // Y.js integration
@@ -147,6 +163,24 @@ let syncTimeout: NodeJS.Timeout
 
 // Create a singleton game engine instance for setup operations
 const gameEngine = new GameEngine()
+
+// Created rooms management
+const CREATED_ROOMS_KEY = 'seasonal-game-created-rooms'
+
+function getCreatedRoomsFromStorage(): CreatedRoom[] {
+  if (typeof window === 'undefined') return []
+  try {
+    const stored = localStorage.getItem(CREATED_ROOMS_KEY)
+    return stored ? JSON.parse(stored) : []
+  } catch {
+    return []
+  }
+}
+
+function saveCreatedRoomsToStorage(rooms: CreatedRoom[]) {
+  if (typeof window === 'undefined') return
+  localStorage.setItem(CREATED_ROOMS_KEY, JSON.stringify(rooms))
+}
 
 /**
  * Y.js Race Condition Fix Documentation
@@ -322,6 +356,7 @@ export const useGameStore = create<CleanGameState>()(
       playerNumber: null,
       roomPlayerCount: 0,
       maxRoomPlayers: 4,
+      createdRooms: getCreatedRoomsFromStorage(),
 
       // Game initialization
       initializeGame: () => {
@@ -459,6 +494,15 @@ export const useGameStore = create<CleanGameState>()(
       // Multiplayer setup
       startMultiplayerGame: async (roomId: string, playerName: string, playerId: string) => {
         try {
+          // Check if WebSocket is already open for this room
+          if (yjsProvider && yjsDoc) {
+            const currentRoomId = get().roomId
+            if (currentRoomId === roomId && yjsProvider.ws?.readyState === WebSocket.OPEN) {
+              console.log(`🔌 WebSocket already open for room ${roomId}, skipping connection`)
+              return
+            }
+          }
+
           // Prevent multiple simultaneous connection attempts
           if (get().isConnected) {
             console.log('🔌 Already connected, skipping duplicate connection attempt')
@@ -481,6 +525,8 @@ export const useGameStore = create<CleanGameState>()(
           const wsUrl = process.env.NEXT_PUBLIC_YJS_SERVER || 'ws://localhost:1234'
           
           console.log(`🔌 Connecting to WebSocket: ${wsUrl}`)
+          console.log(`🎮 Player ID: ${playerId}`)
+          console.log(`🏠 Room ID: ${roomId}`)
           yjsProvider = new WebsocketProvider(wsUrl, roomId, yjsDoc)
           gameStateMap = yjsDoc.getMap('gameState')
           const playersMap = yjsDoc.getMap('players')
@@ -969,6 +1015,52 @@ export const useGameStore = create<CleanGameState>()(
         } catch (error) {
           console.warn('Y.js sync error:', error)
         }
+      },
+
+      // Room management actions
+      addCreatedRoom: (roomId: string, roomName: string) => {
+        const state = get()
+        const newRoom: CreatedRoom = {
+          id: roomId,
+          name: roomName,
+          createdAt: new Date().toISOString(),
+          lastUsed: new Date().toISOString()
+        }
+        
+        const updatedRooms = [newRoom, ...state.createdRooms.filter(r => r.id !== roomId)]
+        set({ createdRooms: updatedRooms })
+        saveCreatedRoomsToStorage(updatedRooms)
+      },
+
+      removeCreatedRoom: (roomId: string) => {
+        const state = get()
+        const updatedRooms = state.createdRooms.filter(r => r.id !== roomId)
+        set({ createdRooms: updatedRooms })
+        saveCreatedRoomsToStorage(updatedRooms)
+      },
+
+      updateRoomLastUsed: (roomId: string) => {
+        const state = get()
+        const updatedRooms = state.createdRooms.map(room => 
+          room.id === roomId 
+            ? { ...room, lastUsed: new Date().toISOString() }
+            : room
+        )
+        set({ createdRooms: updatedRooms })
+        saveCreatedRoomsToStorage(updatedRooms)
+      },
+
+      // Room validation
+      isValidPlayerInRoom: () => {
+        const state = get()
+        return !!(
+          state.isMultiplayer && 
+          state.isConnected && 
+          state.roomId && 
+          state.playerId && 
+          state.playerNumber &&
+          state.playerName
+        )
       }
     }),
     {

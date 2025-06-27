@@ -1,7 +1,8 @@
 'use client'
 
-import React, { Suspense } from 'react'
+import React, { Suspense, useEffect } from 'react'
 import dynamic from 'next/dynamic'
+import { useSearchParams, useRouter } from 'next/navigation'
 
 const GameBoard = dynamic(() => import('@/components/game/GameBoard').then(mod => ({ default: mod.GameBoard })), {
   ssr: false
@@ -17,8 +18,26 @@ import { RulesReferenceCard } from '@/components/game/RulesReferenceCard'
 import { GameSetup } from '@/components/game/GameSetup'
 import { useGameStore } from '@/store/gameStore'
 
-export default function Home() {
-  const { gamePhase, players, isMultiplayer, playerName, playerNumber } = useGameStore()
+function HomeContent() {
+  const { gamePhase, players, isMultiplayer, playerName, playerNumber, isConnected, isValidPlayerInRoom } = useGameStore()
+  const searchParams = useSearchParams()
+  const router = useRouter()
+
+  // Check if user is accessing a room URL without being properly registered
+  useEffect(() => {
+    const roomId = searchParams?.get('room')
+    if (roomId && gamePhase === 'setup') {
+      // Give some time for the store to initialize and attempt connection
+      const checkTimeout = setTimeout(() => {
+        if (!isValidPlayerInRoom()) {
+          console.log('Invalid room access - redirecting to lobby')
+          router.push('/')
+        }
+      }, 2000) // Wait 2 seconds for connection attempt
+
+      return () => clearTimeout(checkTimeout)
+    }
+  }, [searchParams, gamePhase, isValidPlayerInRoom, router])
 
   // Sort players so current player appears first
   const sortedPlayers = React.useMemo(() => {
@@ -34,8 +53,8 @@ export default function Home() {
     return currentPlayer ? [currentPlayer, ...otherPlayers] : players
   }, [players, isMultiplayer, playerNumber])
 
-  // Show setup screen if game is in setup phase
-  if (gamePhase === 'setup') {
+  // Show setup screen if game is in setup phase AND not connected to multiplayer room
+  if (gamePhase === 'setup' && !(isMultiplayer && isConnected)) {
     return (
       <Suspense fallback={<div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center">
         <div className="text-center">
@@ -118,5 +137,18 @@ export default function Home() {
         <RulesDialog />
       </div>
     </div>
+  )
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+        <p className="text-slate-600 dark:text-slate-400">Loading...</p>
+      </div>
+    </div>}>
+      <HomeContent />
+    </Suspense>
   )
 }

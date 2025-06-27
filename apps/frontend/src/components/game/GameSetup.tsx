@@ -41,7 +41,11 @@ export function GameSetup() {
     roomId: currentRoomId,
     playerName: currentPlayerName,
     playerNumber,
-    gamePhase
+    gamePhase,
+    createdRooms,
+    addCreatedRoom,
+    removeCreatedRoom,
+    updateRoomLastUsed
   } = useGameStore()
 
   const handleJoinRoom = useCallback(async (customRoomId?: string, customPlayerName?: string) => {
@@ -110,13 +114,13 @@ export function GameSetup() {
       
       const newRoomId = `room-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
       
-      // Update URL with room ID
-      router.push(`/?room=${newRoomId}`)
+      // Add to created rooms list
+      addCreatedRoom(newRoomId, `${playerName}'s Game`)
       
       // Set up room state
       setRoomId(newRoomId)
       
-      // Start multiplayer game
+      // Start multiplayer game (this will handle URL update)
       handleJoinRoom(newRoomId, playerName.trim())
     }
   }
@@ -134,9 +138,68 @@ export function GameSetup() {
     })
   }
 
+  // Show waiting room if connected to multiplayer room but game hasn't started
+  if (isConnected && isMultiplayer && currentRoomId) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center p-4">
+        <div className="w-full max-w-2xl">
+          <Card>
+            <CardHeader className="text-center">
+              <CardTitle className="text-2xl">🏠 Room: {currentRoomId}</CardTitle>
+              <p className="text-slate-600 dark:text-slate-400">
+                Waiting for players to join...
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="text-center space-y-4">
+                <div className="flex items-center justify-center space-x-2">
+                  <span className="text-lg font-semibold">You: {currentPlayerName}</span>
+                  <span className="px-2 py-1 bg-blue-500 text-white text-sm font-bold rounded-full">
+                    Player {playerNumber}
+                  </span>
+                </div>
+                
+                <div className="flex items-center justify-center space-x-4 py-4">
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <span>Player 1 (You)</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <div className="w-3 h-3 bg-gray-300 rounded-full animate-pulse"></div>
+                    <span className="text-gray-500">Waiting for Player 2...</span>
+                  </div>
+                </div>
+                
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <p className="text-sm text-blue-700 dark:text-blue-300 mb-2">
+                    Share this link to invite others:
+                  </p>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="text"
+                      value={`${window.location.origin}/?room=${currentRoomId}`}
+                      readOnly
+                      className="flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-800 border rounded-md"
+                    />
+                    <Button onClick={copyRoomLink} variant="outline" size="sm">
+                      Copy
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center p-4">
-      <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="w-full max-w-6xl space-y-6">
+        
+        {/* Main setup cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         
         {/* Local Game Section */}
         <Card>
@@ -359,6 +422,84 @@ export function GameSetup() {
             )}
           </CardContent>
         </Card>
+        </div>
+
+        {/* My Created Rooms Section */}
+        {createdRooms.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">📂 My Created Rooms</CardTitle>
+              <p className="text-slate-600 dark:text-slate-400 text-sm">
+                Rooms you've created recently
+              </p>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {createdRooms.slice(0, 5).map((room) => (
+                  <div key={room.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                    <div className="flex-1">
+                      <div className="flex items-center space-x-3">
+                        <span className="font-medium">{room.name}</span>
+                        <span className="text-xs text-slate-500 bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded">
+                          {room.id}
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">
+                        Created: {new Date(room.createdAt).toLocaleDateString()}
+                        {room.lastUsed !== room.createdAt && (
+                          <span className="ml-2">
+                            • Last used: {new Date(room.lastUsed).toLocaleDateString()}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        onClick={() => {
+                          setRoomId(room.id)
+                          updateRoomLastUsed(room.id)
+                          if (playerName.trim()) {
+                            handleJoinRoom(room.id, playerName.trim())
+                          }
+                        }}
+                        disabled={!playerName.trim()}
+                        variant="outline"
+                        size="sm"
+                        className="text-xs"
+                      >
+                        🎮 Join
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          const roomLink = `${window.location.origin}/?room=${room.id}`
+                          navigator.clipboard.writeText(roomLink)
+                        }}
+                        variant="outline"
+                        size="sm"
+                        className="text-xs"
+                      >
+                        📋 Copy Link
+                      </Button>
+                      <Button
+                        onClick={() => removeCreatedRoom(room.id)}
+                        variant="outline"
+                        size="sm"
+                        className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                      >
+                        🗑️
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+                {createdRooms.length > 5 && (
+                  <p className="text-center text-sm text-slate-500">
+                    ...and {createdRooms.length - 5} more
+                  </p>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* Footer Links */}
