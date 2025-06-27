@@ -602,11 +602,11 @@ export const useGameStore = create<CleanGameState>()(
           
           // If this player is reconnecting, keep their number
           if (existingPlayers[playerId] && existingPlayers[playerId].isActive) {
-            playerNumber = existingPlayers[playerId].playerNumber || 1
+            playerNumber = existingPlayers[playerId].playerNumber ?? 1
             console.log(`Player ${playerId} reconnecting as Player ${playerNumber}`)
           } else {
             // Assign the lowest available player number
-            const takenNumbers = activeExistingPlayers.map((p: { playerNumber?: number }) => p.playerNumber || 1)
+            const takenNumbers = activeExistingPlayers.map((p: { playerNumber?: number }) => p.playerNumber ?? 1)
             console.log('Taken player numbers:', takenNumbers)
             
             for (let i = 1; i <= 4; i++) {

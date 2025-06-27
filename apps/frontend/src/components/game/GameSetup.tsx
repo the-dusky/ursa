@@ -10,23 +10,22 @@ import { Input } from '@/components/ui/input'
 import { useGameStore } from '@/store/gameStore'
 import { useRouter, useSearchParams } from 'next/navigation'
 
-// Generate unique player ID per browser tab
+// Generate consistent player ID for multiplayer games
 function generatePlayerId(): string {
   // Only run on client side
   if (typeof window === 'undefined') {
     return ''
   }
   
-  // Get base player identity from localStorage (persists across browser restarts)
-  let basePlayerId = localStorage.getItem('base-player-id')
-  if (!basePlayerId) {
-    basePlayerId = `player-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
-    localStorage.setItem('base-player-id', basePlayerId)
+  // For multiplayer games, use consistent ID across tabs so the same person
+  // doesn't get multiple player numbers when refreshing or opening new tabs
+  let playerId = localStorage.getItem('multiplayer-player-id')
+  if (!playerId) {
+    playerId = `player-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+    localStorage.setItem('multiplayer-player-id', playerId)
   }
   
-  // Add tab-specific identifier (unique per tab, even from same browser)
-  const tabId = crypto.randomUUID ? crypto.randomUUID().substring(0, 8) : Math.random().toString(36).substring(2, 8)
-  return `${basePlayerId}-tab-${tabId}`
+  return playerId
 }
 
 export function GameSetup() {
