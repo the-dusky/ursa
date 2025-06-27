@@ -4,8 +4,7 @@
  */
 
 import { NextApiRequest, NextApiResponse } from 'next'
-import { runQuickTest } from '../../simulation/test-runner'
-import { BatchResults } from '../../simulation/BatchRunner'
+import { runQuickTest, BatchResults } from '../../simulation/runSimulation'
 
 export default async function handler(
   req: NextApiRequest,
@@ -50,7 +49,10 @@ export default async function handler(
     res.status(200).json({
       success: true,
       summary,
-      fullResults: results
+      fullResults: {
+        ...results,
+        games: results.games || []
+      }
     })
     
   } catch (error) {

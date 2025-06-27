@@ -422,18 +422,24 @@ export class GameEngine {
       turnPhase: 'movement'
     }
     
-    // Advance turn
-    newState.turn += 1
+    // Advance to next player
+    newState.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length
     
-    // Check for season/year advancement (every 4 turns = new season)
-    if (newState.turn % 4 === 0) {
-      newState = this.advanceSeason(newState)
+    // If we've cycled back to the first player, advance the turn
+    if (newState.currentPlayerIndex === 0) {
+      newState.turn += 1
+      
+      // Check for season/year advancement (every 4 turns = new season)
+      if (newState.turn % 4 === 0) {
+        newState = this.advanceSeason(newState)
+      }
     }
 
+    const currentPlayer = newState.players[newState.currentPlayerIndex]
     return {
       success: true,
       state: newState,
-      message: 'Turn advanced'
+      message: `Turn advanced - now ${currentPlayer?.name || 'Player ' + (newState.currentPlayerIndex + 1)}'s turn`
     }
   }
 

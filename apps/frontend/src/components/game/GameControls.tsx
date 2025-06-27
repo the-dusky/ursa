@@ -150,7 +150,7 @@ export function GameControls() {
             Rules
           </Button>
           <Button onClick={resetGame} variant="destructive">
-            Reset Game
+            New Game
           </Button>
         </div>
 

@@ -5,8 +5,8 @@
   "description": "Y.js WebSocket server for Seasonal Board Game multiplayer",
   "main": "y-websocket-server.js",
   "scripts": {
-    "start": "DEBUG=y-websocket npx y-websocket",
-    "dev": "DEBUG=y-websocket npx y-websocket",
+    "start": "node y-websocket-server.js",
+    "dev": "node y-websocket-server.js",
     "docker:build": "docker build -t y-websocket-server .",
     "docker:run": "docker run -p 1234:1234 y-websocket-server",
     "docker:dev": "docker run -p 1234:1234 --rm y-websocket-server",
@@ -28,7 +28,8 @@
     "node": ">=16.0.0"
   },
   "dependencies": {
-    "@y/websocket-server": "^0.1.1",
-    "y-websocket": "^3.0.0"
+    "ws": "^8.14.2",
+    "yjs": "^13.6.27",
+    "y-websocket": "^2.0.0"
   }
 }

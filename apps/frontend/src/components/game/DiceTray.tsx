@@ -1,75 +1,87 @@
 'use client'
 
-import { useState } from 'react'
 import { useGameStore } from '@/store/gameStore'
-import { rollDice, type DiceRoll } from '@/engine/utils/dice'
+import { rollDice } from '@/engine/utils/dice'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
-export interface DiceTrayState {
-  positionRolls: DiceRoll | null
-  directionRolls: DiceRoll | null
-  rotations: number[]
-  isRolling: boolean
-}
-
 export function DiceTray() {
-  const { updateBoardRotations } = useGameStore()
-  const [diceState, setDiceState] = useState<DiceTrayState>({
-    positionRolls: null,
-    directionRolls: null,
-    rotations: [],
-    isRolling: false
-  })
+  const { updateBoardRotations, diceState, updateDiceState, isMultiplayer, playerNumber } = useGameStore()
 
   const rollForBoardSetup = async () => {
-    setDiceState(prev => ({ ...prev, isRolling: true }))
+    // In multiplayer, only Player 1 should actually roll dice
+    // Other players will just show the rolling animation and wait for sync
+    const shouldActuallyRoll = !isMultiplayer || playerNumber === 1
     
-    // Simulate rolling animation delay
-    setTimeout(() => {
-      // Roll 1: Position dice (1-6 for each ring)
-      const positionRolls = rollDice(5)
-      
-      // Small delay before second roll
+    updateDiceState({ isRolling: true })
+    
+    if (shouldActuallyRoll) {
+      // Simulate rolling animation delay
       setTimeout(() => {
-        // Roll 2: Direction dice (1-3 = negative, 4-6 = positive)
-        const directionRolls = rollDice(5)
+        // Roll 1: Position dice (1-6 for each ring)
+        const positionRolls = rollDice(5)
         
-        // Convert to rotations (dice 1 = no rotation, 2-6 = 1-5 rotations)
-        const rotations = positionRolls.dice.map((position, index) => {
-          const direction = directionRolls.dice[index]
-          const isPositive = direction >= 4 // 4,5,6 = positive (clockwise)
-          const rotationAmount = position - 1 // Convert 1-6 dice to 0-5 rotations
-          return isPositive ? rotationAmount : -rotationAmount
-        })
-        
-        setDiceState({
-          positionRolls,
-          directionRolls: directionRolls,
-          rotations,
-          isRolling: false
-        })
-      }, 200)
-    }, 300)
+        // Small delay before second roll
+        setTimeout(() => {
+          // Roll 2: Direction dice (1-3 = negative, 4-6 = positive)
+          const directionRolls = rollDice(5)
+          
+          // Convert to rotations (dice 1 = no rotation, 2-6 = 1-5 rotations)
+          const rotations = positionRolls.dice.map((position, index) => {
+            const direction = directionRolls.dice[index]
+            const isPositive = direction >= 4 // 4,5,6 = positive (clockwise)
+            const rotationAmount = position - 1 // Convert 1-6 dice to 0-5 rotations
+            return isPositive ? rotationAmount : -rotationAmount
+          })
+          
+          updateDiceState({
+            positionRolls,
+            directionRolls,
+            rotations,
+            isRolling: false
+          })
+        }, 200)
+      }, 300)
+    } else {
+      // If not rolling (Player 2+ in multiplayer), set a timeout to stop rolling animation
+      // in case Y.js sync doesn't work for some reason
+      setTimeout(() => {
+        if (diceState.isRolling) {
+          console.warn('Dice roll timeout - stopping animation')
+          updateDiceState({ isRolling: false })
+        }
+      }, 2000) // 2 second timeout
+    }
   }
 
   const applyToBoard = () => {
     if (diceState.rotations.length > 0) {
-      // This will trigger board regeneration with new rotations
-      // We need to update the gameStore to use these rotations
-      updateBoardRotations(diceState.rotations)
+      // In multiplayer, only Player 1 should actually apply board changes
+      // Other players will see the changes via Y.js sync
+      const shouldActuallyApply = !isMultiplayer || playerNumber === 1
+      
+      if (shouldActuallyApply) {
+        // This will trigger board regeneration with new rotations and sync via Y.js
+        updateBoardRotations(diceState.rotations)
+      }
     }
   }
 
   const resetToStandard = () => {
-    setDiceState({
+    // In multiplayer, only Player 1 should actually reset
+    const shouldActuallyReset = !isMultiplayer || playerNumber === 1
+    
+    updateDiceState({
       positionRolls: null,
       directionRolls: null,
       rotations: [],
       isRolling: false
     })
-    // Reset board to standard [0, 0, 0, 0, 0] configuration (no rotations)
-    updateBoardRotations([0, 0, 0, 0, 0])
+    
+    if (shouldActuallyReset) {
+      // Reset board to standard [0, 0, 0, 0, 0] configuration (no rotations)
+      updateBoardRotations([0, 0, 0, 0, 0])
+    }
   }
 
   // Apply rotations to the board via the game store
@@ -95,15 +107,18 @@ export function DiceTray() {
         <div className="flex gap-2 flex-wrap">
           <Button 
             onClick={rollForBoardSetup}
-            disabled={diceState.isRolling}
+            disabled={diceState.isRolling || (isMultiplayer && playerNumber !== 1)}
             className="flex-1"
           >
-            {diceState.isRolling ? '🎲 Rolling...' : '🎲 Roll for Board'}
+            {diceState.isRolling ? '🎲 Rolling...' : 
+             isMultiplayer && playerNumber !== 1 ? '🎲 Player 1 Rolls' : 
+             '🎲 Roll for Board'}
           </Button>
           <Button 
             onClick={resetToStandard}
             variant="outline"
             size="sm"
+            disabled={isMultiplayer && playerNumber !== 1}
           >
             Reset
           </Button>
@@ -168,8 +183,9 @@ export function DiceTray() {
               onClick={applyToBoard}
               className="w-full"
               variant="default"
+              disabled={isMultiplayer && playerNumber !== 1}
             >
-              📐 Apply to Board
+              {isMultiplayer && playerNumber !== 1 ? '📐 Player 1 Applies' : '📐 Apply to Board'}
             </Button>
           </div>
         )}
@@ -180,6 +196,11 @@ export function DiceTray() {
           <p>• Position roll: 1=stay, 2-6=rotate 1-5 positions</p>
           <p>• Direction roll: 1-3=↺, 4-6=↻</p>
           <p>• Red line stays fixed, rings rotate around it</p>
+          {isMultiplayer && (
+            <p className="text-blue-600 font-medium mt-1">
+              • Multiplayer: Player 1 controls dice and board setup
+            </p>
+          )}
         </div>
       </CardContent>
     </Card>

@@ -6,6 +6,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { GAME_CONFIG } from '@/engine/GameConfig'
+import { usePhaseManagement } from '@/hooks/usePhaseManagement'
+import { EnergyTaxButton, FatConversionButton, EnergyDisplay } from '@/components/game/BearCard'
 
 interface PlayerControlCardProps {
   playerId: string
@@ -19,7 +21,9 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
     turnPhase,
     season,
     board,
-    energyTaxPaid
+    energyTaxPaid,
+    isMultiplayer,
+    playerNumber
   } = useGameStore()
   
   // Get UI actions (for user interactions)
@@ -35,7 +39,21 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
   } = useUIInteractions()
   
   const player = players.find(p => String(p.id) === playerId)
-  const isCurrentPlayer = player && String(players[currentPlayerIndex]?.id) === playerId
+  const isCurrentPlayer = Boolean(player && String(players[currentPlayerIndex]?.id) === playerId)
+  const isMyCard = isMultiplayer ? Boolean(player && player.id === playerNumber) : isCurrentPlayer
+  
+  // Use phase management hook (must be called before any conditional returns)
+  const phaseManagement = usePhaseManagement({
+    player,
+    turnPhase,
+    season,
+    energyTaxPaid,
+    isCurrentPlayer,
+    board,
+    onAdvanceTurn,
+    onAdvancePhase,
+    onHarvest
+  })
   
   // Helper function to get conversion tooltip
   const getConversionTooltip = (resourceType: keyof typeof GAME_CONFIG.resources.conversion.energy, convertTo: 'energy' | 'fat') => {
@@ -45,55 +63,6 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
   
   if (!player || player.id === 'bears') return null
 
-  // Check if player has bears in mountains during winter (for hibernation phase)
-  const hasBearsInMountainsDuringWinter = season === 'Winter' && player?.pieces.some(piece => {
-    const space = Object.values(board.spaces).find(s => s.piece?.id === piece.id)
-    return space?.quadrant === 'Mountains'
-  })
-  
-  // Check if all player's bears are hibernating
-  const allBearsHibernating = player?.pieces.length > 0 && player.pieces.every(piece => piece.isHibernating)
-  
-  const baseTurnPhases = ['movement', 'harvest', 'eat'] as const
-  const turnPhases = hasBearsInMountainsDuringWinter 
-    ? [...baseTurnPhases, 'hibernation', 'complete'] as const
-    : [...baseTurnPhases, 'complete'] as const
-  
-  const getCurrentPhaseIndex = () => {
-    const currentIndex = turnPhases.findIndex(phase => phase === turnPhase)
-    return currentIndex === -1 ? 0 : currentIndex
-  }
-  
-  const handlePhaseChange = (phase: typeof turnPhases[number]) => {
-    if (!isCurrentPlayer) return
-    
-    const currentIndex = getCurrentPhaseIndex()
-    const targetIndex = turnPhases.findIndex(p => p === phase)
-    
-    // Only allow forward progression or staying on current phase
-    if (targetIndex < currentIndex) return
-    
-    // Cannot advance from movement phase unless energy tax is paid
-    if (turnPhase === 'movement' && !energyTaxPaid && phase !== 'movement') {
-      return // Block advancement until tax is paid
-    }
-    
-    if (phase === 'complete') {
-      // Use action creator for turn advancement
-      onAdvanceTurn()
-    } else {
-      // Use action creator for phase advancement
-      onAdvancePhase()
-      
-      // If advancing to harvest, auto-harvest for all pieces
-      if (phase === 'harvest' && energyTaxPaid) {
-        // Auto-harvest for each piece individually using action creators
-        player?.pieces.forEach((piece) => {
-          onHarvest(piece.id)
-        })
-      }
-    }
-  }
 
   const handleEatResource = (pieceId: string, resourceType: 'grains' | 'berries' | 'salmon' | 'honey' | 'bearMeat', convertTo: 'energy' | 'fat') => {
     if (!isCurrentPlayer || turnPhase !== 'eat') return
@@ -133,11 +102,18 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
   }
 
   return (
-    <Card className={isCurrentPlayer ? 'ring-2 ring-blue-500 bg-blue-50' : 'opacity-75'}>
+    <Card className={isMyCard ? 'ring-2 ring-blue-500 bg-blue-50' : 'opacity-75'}>
       <CardHeader className="pb-2">
         <CardTitle className="flex items-center justify-between text-sm">
           <div className="flex items-center gap-3">
-            <span>{player.name}</span>
+            <div className="flex items-center gap-2">
+              <span>{player.name}</span>
+              {isMyCard && (
+                <Badge className="bg-green-500 text-white text-xs px-2 py-0.5">
+                  YOUR CARD
+                </Badge>
+              )}
+            </div>
             <div className="flex gap-2 text-xs text-gray-600">
               <span>🐻 {player.pieceCount.bears}/{player.pieceCount.maxBears}</span>
               <span>🐼 {player.pieceCount.cubs}/{player.pieceCount.maxCubs}</span>
@@ -152,29 +128,23 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
       <CardContent>
 
         {/* Turn Phase Controls - At Top */}
-        {!allBearsHibernating && isCurrentPlayer && (
+        {!phaseManagement.allBearsHibernating && isCurrentPlayer && (
           <div className="mb-2">
             <div className="font-medium text-sm mb-1">Turn Phase:</div>
             <div className="grid grid-cols-5 gap-1">
-              {turnPhases.map((phase, index) => {
-                const currentIndex = getCurrentPhaseIndex()
-                const isCompleted = index < currentIndex
-                const isCurrent = index === currentIndex && isCurrentPlayer
-                const isNextPhase = index === currentIndex + 1
-                // Can only advance to next phase if tax is paid (or staying on current phase)
-                const canAdvance = energyTaxPaid || turnPhase !== 'movement' || !isNextPhase
-                const isAvailable = index <= currentIndex + 1 && isCurrentPlayer && canAdvance
+              {phaseManagement.turnPhases.map((phase, index) => {
+                const buttonProps = phaseManagement.getPhaseButtonProps(phase, index)
                 
                 return (
                   <Button
                     key={phase}
-                    onClick={() => handlePhaseChange(phase)}
-                    variant={isCurrent ? "default" : isCompleted ? "secondary" : "outline"}
+                    onClick={buttonProps.onClick}
+                    variant={buttonProps.isCurrent ? "default" : buttonProps.isCompleted ? "secondary" : "outline"}
                     size="sm"
-                    disabled={!isAvailable}
-                    className={`text-xs p-1 h-8 ${isCompleted ? 'bg-green-100 text-green-800' : ''}`}
+                    disabled={!buttonProps.isAvailable}
+                    className={`text-xs p-1 h-8 ${buttonProps.isCompleted ? 'bg-green-100 text-green-800' : ''}`}
                   >
-                    {phase === 'complete' ? 'End Turn' : phase.slice(0, 3)}
+                    {buttonProps.label}
                   </Button>
                 )
               })}
@@ -183,7 +153,7 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
         )}
 
         {/* Hibernation-only interface */}
-        {allBearsHibernating && isCurrentPlayer ? (
+        {phaseManagement.allBearsHibernating && isCurrentPlayer ? (
           <div className="space-y-3">
             <div className="text-center text-sm text-blue-600 font-medium">
               💤 All Bears Hibernating 💤
@@ -193,7 +163,7 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
             </div>
             <div className="flex justify-center">
               <Button
-                onClick={() => handlePhaseChange('complete')}
+                onClick={() => phaseManagement.handlePhaseChange('complete')}
                 variant="default"
                 size="sm"
                 className="bg-green-500 hover:bg-green-600 text-white"
@@ -351,49 +321,16 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
                     <div className="space-y-0.5">
                       <div className="border rounded p-0.5 bg-yellow-50">
                         <div className="text-xs text-center">Energy</div>
-                        <div className="text-xs text-center">
-                          ⚡{isEmpty ? 0 : piece.energy}
-                          {!isEmpty && piece && piece.emergencyEnergy > 0 && (
-                            <span className="text-orange-600">+{piece.emergencyEnergy}</span>
-                          )}
-                        </div>
+                        <EnergyDisplay piece={piece} isEmpty={isEmpty} />
                         {isCurrentPlayer && turnPhase === 'movement' && !isEmpty && piece && !energyTaxPaid && (
                           <div className="mt-0.5">
-                            {(() => {
-                              const space = Object.values(board.spaces).find(s => s.piece?.id === piece.id)
-                              const energyCost = season === 'Winter' ? 
-                                (space?.quadrant === 'Mountains' ? 2 : 5) : 1
-                              const totalEnergy = piece.energy + piece.emergencyEnergy
-                              const totalFat = piece.fat
-                              const canPayTax = totalEnergy >= energyCost
-                              // Calculate how much energy we can get from fat conversion (incremental: 2 fat = 1 energy)
-                              const maxEnergyFromFat = Math.floor(totalFat / 2) // Only count complete pairs of fat
-                              const totalPossibleEnergy = totalEnergy + maxEnergyFromFat
-                              const canSurvive = totalPossibleEnergy >= energyCost
-                              
-                              if (!canSurvive) {
-                                return (
-                                  <button
-                                    onClick={() => handleDeath(piece.id)}
-                                    className="text-xs bg-red-600 hover:bg-red-700 text-white rounded px-1 py-0.5 w-full"
-                                    title={`Cannot pay ${energyCost} energy tax - must die`}
-                                  >
-                                    💀 Die (Can&apos;t Pay)
-                                  </button>
-                                )
-                              }
-                              
-                              return (
-                                <button
-                                  onClick={() => handlePayEnergyTax(piece.id)}
-                                  className="text-xs bg-red-100 hover:bg-red-200 rounded px-1 py-0.5 w-full"
-                                  disabled={!canPayTax}
-                                  title={`Pay ${energyCost} energy tax`}
-                                >
-                                  Tax {energyCost}⚡
-                                </button>
-                              )
-                            })()}
+                            <EnergyTaxButton
+                              piece={piece}
+                              space={Object.values(board.spaces).find(s => s.piece?.id === piece.id)}
+                              season={season}
+                              onPayTax={handlePayEnergyTax}
+                              onDeath={handleDeath}
+                            />
                           </div>
                         )}
                       </div>
@@ -404,24 +341,10 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
                         </div>
                         {isCurrentPlayer && turnPhase === 'movement' && !isEmpty && piece && (
                           <div className="mt-0.5">
-                            {(() => {
-                              const canConvert = piece.fat >= 2 // Need at least 2 fat to convert
-                              
-                              return (
-                                <button
-                                  onClick={() => handleConvertFat(piece.id)}
-                                  className={`text-xs rounded px-1 py-0.5 w-full relative z-10 ${
-                                    canConvert 
-                                      ? 'bg-orange-100 hover:bg-orange-200' 
-                                      : 'bg-gray-100 cursor-not-allowed'
-                                  }`}
-                                  disabled={!canConvert}
-                                  title={canConvert ? `Convert 2 fat to 1 energy (have ${piece.fat} fat)` : `Need 2 fat to convert (have ${piece.fat})`}
-                                >
-                                  🔥→⚡ (2→1)
-                                </button>
-                              )
-                            })()}
+                            <FatConversionButton
+                              piece={piece}
+                              onConvertFat={handleConvertFat}
+                            />
                           </div>
                         )}
                       </div>

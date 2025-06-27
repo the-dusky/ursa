@@ -1,5 +1,6 @@
 'use client'
 
+import React from 'react'
 import dynamic from 'next/dynamic'
 
 const GameBoard = dynamic(() => import('@/components/game/GameBoard').then(mod => ({ default: mod.GameBoard })), {
@@ -13,26 +14,51 @@ import { DiceTray } from '@/components/game/DiceTray'
 import { MultiplayerControls } from '@/components/game/MultiplayerControls'
 import { RulesDialog } from '@/components/game/RulesDialog'
 import { RulesReferenceCard } from '@/components/game/RulesReferenceCard'
+import { GameSetup } from '@/components/game/GameSetup'
 import { useGameStore } from '@/store/gameStore'
-import { useEffect } from 'react'
 
 export default function Home() {
-  const { initializeGame, gamePhase, players } = useGameStore()
+  const { gamePhase, players, isMultiplayer, playerName, playerNumber } = useGameStore()
 
-  useEffect(() => {
-    if (gamePhase === 'setup') {
-      initializeGame()
+  // Sort players so current player appears first
+  const sortedPlayers = React.useMemo(() => {
+    if (!isMultiplayer || !playerNumber || players.length <= 1) {
+      return players // For single player or when not in multiplayer, use default order
     }
-  }, [gamePhase, initializeGame])
+
+    // Find current player and other players
+    const currentPlayer = players.find(p => p.id === playerNumber)
+    const otherPlayers = players.filter(p => p.id !== playerNumber)
+    
+    // Return array with current player first, then others
+    return currentPlayer ? [currentPlayer, ...otherPlayers] : players
+  }, [players, isMultiplayer, playerNumber])
+
+  // Show setup screen if game is in setup phase
+  if (gamePhase === 'setup') {
+    return <GameSetup />
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
       <div className="container mx-auto p-4">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">
-            Seasonal Board Game
-          </h1>
+          <div>
+            <h1 className="text-3xl font-bold text-slate-800 dark:text-slate-200">
+              Seasonal Board Game
+            </h1>
+            {isMultiplayer && playerName && playerNumber && (
+              <div className="mt-2 inline-flex items-center gap-2 px-3 py-1 bg-blue-100 dark:bg-blue-900 rounded-full">
+                <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                  Playing as: {playerName}
+                </span>
+                <span className="px-2 py-0.5 bg-blue-500 text-white text-xs font-bold rounded-full">
+                  Player {playerNumber}
+                </span>
+              </div>
+            )}
+          </div>
           <div className="flex items-center gap-4">
             <a 
               href="/simulation"
@@ -53,9 +79,9 @@ export default function Home() {
           
           {/* Center Column - Player Controls & Game Board */}
           <main className="lg:col-span-2 space-y-4">
-            {/* Player 1 Controls - Above board */}
-            {players.length > 0 && (
-              <PlayerControlCard playerId={String(players[0]?.id)} />
+            {/* Current Player Controls - Above board */}
+            {sortedPlayers.length > 0 && (
+              <PlayerControlCard playerId={String(sortedPlayers[0]?.id)} />
             )}
             
             {/* Game Board */}
@@ -63,9 +89,9 @@ export default function Home() {
               <GameBoard />
             </div>
             
-            {/* Player 2 Controls - Below board */}
-            {players.length > 1 && (
-              <PlayerControlCard playerId={String(players[1]?.id)} />
+            {/* Other Player Controls - Below board */}
+            {sortedPlayers.length > 1 && (
+              <PlayerControlCard playerId={String(sortedPlayers[1]?.id)} />
             )}
           </main>
 

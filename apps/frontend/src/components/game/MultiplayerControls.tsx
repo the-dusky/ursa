@@ -24,6 +24,8 @@ export function MultiplayerControls() {
     isConnected, 
     roomId, 
     playerName,
+    playerNumber,
+    roomPlayerCount,
     startMultiplayerGame,
     disconnectFromRoom
   } = useGameStore()
@@ -49,7 +51,8 @@ export function MultiplayerControls() {
     setIsLoading(true)
     try {
       const newRoomId = generateRoomId()
-      await startMultiplayerGame(newRoomId, inputPlayerName.trim())
+      const playerId = `player-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+      await startMultiplayerGame(newRoomId, inputPlayerName.trim(), playerId)
       setShowCreateDialog(false)
       setInputPlayerName('')
     } catch (error) {
@@ -68,7 +71,8 @@ export function MultiplayerControls() {
 
     setIsLoading(true)
     try {
-      await startMultiplayerGame(inputRoomId.trim(), inputPlayerName.trim())
+      const playerId = `player-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
+      await startMultiplayerGame(inputRoomId.trim(), inputPlayerName.trim(), playerId)
       setShowJoinDialog(false)
       setInputRoomId('')
       setInputPlayerName('')
@@ -118,8 +122,20 @@ export function MultiplayerControls() {
         <CardContent className="space-y-4">
           {/* Player Info */}
           <div className="p-3 rounded-lg bg-slate-700/50 border border-slate-600">
-            <div className="text-sm text-slate-300 mb-1">Your Name</div>
-            <div className="font-medium text-slate-200">{playerName}</div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm text-slate-300">You are:</div>
+              {playerNumber && (
+                <Badge className="bg-blue-500 text-white font-bold">
+                  Player {playerNumber}
+                </Badge>
+              )}
+            </div>
+            <div className="font-medium text-slate-200 text-lg">{playerName}</div>
+            {roomPlayerCount && (
+              <div className="text-xs text-slate-400 mt-1">
+                {roomPlayerCount}/2 players connected
+              </div>
+            )}
           </div>
 
           {/* Room Info */}
