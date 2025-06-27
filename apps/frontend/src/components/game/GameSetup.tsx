@@ -48,7 +48,7 @@ export function GameSetup() {
     updateRoomLastUsed
   } = useGameStore()
 
-  const handleJoinRoom = useCallback(async (customRoomId?: string, customPlayerName?: string) => {
+  const handleJoinRoom = useCallback(async (customRoomId?: string, customPlayerName?: string, isCreatingRoom?: boolean) => {
     const targetRoomId = customRoomId || roomId.trim()
     const targetPlayerName = customPlayerName || playerName.trim()
     
@@ -64,8 +64,8 @@ export function GameSetup() {
       
       await startMultiplayerGame(targetRoomId, targetPlayerName, playerId)
       
-      // Update URL if not already set
-      if (!searchParams?.get('room')) {
+      // Only update URL if joining an existing room (not creating)
+      if (!isCreatingRoom && !searchParams?.get('room')) {
         router.push(`/?room=${targetRoomId}`)
       }
     } catch (error) {
@@ -120,8 +120,8 @@ export function GameSetup() {
       // Set up room state
       setRoomId(newRoomId)
       
-      // Start multiplayer game (this will handle URL update)
-      handleJoinRoom(newRoomId, playerName.trim())
+      // Start multiplayer game (don't redirect when creating)
+      handleJoinRoom(newRoomId, playerName.trim(), true)
     }
   }
 
@@ -354,7 +354,7 @@ export function GameSetup() {
                 {/* Room Actions */}
                 <div className="space-y-3">
                   <Button 
-                    onClick={() => handleJoinRoom()}
+                    onClick={() => handleJoinRoom(undefined, undefined, false)}
                     disabled={!roomId.trim() || !playerName.trim() || isJoining}
                     className="w-full h-12 text-lg font-semibold"
                     size="lg"
