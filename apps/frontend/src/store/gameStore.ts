@@ -15,6 +15,7 @@ import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import { BoardFactory, GAME_CONFIG, type EngineBoard, type BoardConfig, type BoardSpace } from '../engine'
 import type { CoreGameState, QuadrantType } from '../engine/types'
+import type { DiceRoll } from '../engine/utils/dice'
 
 // Re-export types for backward compatibility
 export interface GameSpace {
@@ -75,6 +76,13 @@ export interface Player {
   score: number
 }
 
+export interface DiceTrayState {
+  positionRolls: DiceRoll | null
+  directionRolls: DiceRoll | null
+  rotations: number[]
+  isRolling: boolean
+}
+
 /**
  * Clean Game State - Only game data, no UI state
  */
@@ -89,16 +97,23 @@ export interface CleanGameState {
   gamePhase: 'setup' | 'playing' | 'ended'
   turnPhase: 'movement' | 'harvest' | 'eat' | 'hibernation'
   energyTaxPaid: boolean
+  diceState: DiceTrayState
 
   // Multiplayer state
   isMultiplayer: boolean
   roomId: string | null
   isConnected: boolean
   playerName: string
+  playerId: string | null
+  playerNumber: number | null
+  roomPlayerCount: number
+  maxRoomPlayers: number
 
   // Game actions - delegate to engine
   initializeGame: () => void
-  startMultiplayerGame: (roomId: string, playerName: string) => Promise<void>
+  initializeGameWithPlayerCount: (playerCount: number) => void
+  initializeMultiplayerGame: (multiplayerPlayers: { [playerId: string]: { name: string; playerNumber: number } }) => void
+  startMultiplayerGame: (roomId: string, playerName: string, playerId: string) => Promise<void>
   disconnectFromRoom: () => void
   
   // Engine-powered actions
@@ -106,6 +121,9 @@ export interface CleanGameState {
   
   // Board management - delegate to BoardFactory
   updateBoardRotations: (rotations: number[]) => void
+  
+  // Dice management
+  updateDiceState: (newDiceState: Partial<DiceTrayState>) => void
   
   // Utility functions
   calculateScore: (playerId: string | number) => number
@@ -121,6 +139,31 @@ export interface CleanGameState {
 let yjsDoc: Y.Doc | null = null
 let yjsProvider: WebsocketProvider | null = null
 let gameStateMap: Y.Map<unknown> | null = null
+let isUpdatingFromYjs = false // 🔒 Lock to prevent race conditions
+let syncTimeout: NodeJS.Timeout
+
+/**
+ * Y.js Race Condition Fix Documentation
+ * 
+ * Problem: Previously, when Client A updated the Yjs document, Client B would receive 
+ * the update and trigger a Zustand set(), which in turn would fire the store subscription
+ * and call syncToYjs(), potentially overwriting A's fresh data with B's stale copy.
+ * 
+ * Solution:
+ * 1. Lock Pattern: Use isUpdatingFromYjs flag to prevent recursive updates
+ *    - Set isUpdatingFromYjs = true BEFORE calling set() in the observer
+ *    - Check this flag in syncToYjs to avoid sending updates while receiving them
+ * 
+ * 2. Shallow Equality Check: In syncToYjs, compare current vs previous state
+ *    using JSON.stringify to avoid unnecessary network traffic for identical data
+ * 
+ * 3. Debounced Sync: Use setTimeout(50ms) to batch rapid local changes before
+ *    sending to Yjs, reducing network overhead
+ * 
+ * 4. Debug Logging: Track update sources with console.log to identify conflicts
+ *    - "[From Yjs] Applying incoming update" - Remote changes being applied
+ *    - "[To Yjs] Sending local update" - Local changes being sent
+ */
 
 /**
  * Convert engine board format to store board format
@@ -171,25 +214,85 @@ function createInitialBoard(customRotations?: number[]): Board {
 /**
  * Create initial players
  */
-function createInitialPlayers(): Player[] {
-  return [
-    {
-      id: 1,
-      name: 'Player 1',
-      color: '#8B4513',
-      pieces: [],
-      pieceCount: { bears: 0, cubs: 0, maxBears: 3, maxCubs: 6 },
-      score: 0
+function createInitialPlayers(playerCount: number = 1, multiplayerPlayers?: { [playerId: string]: { name: string; playerNumber: number } }): Player[] {
+  const colors = ['#8B4513', '#228B22', '#4682B4', '#DC143C'] // Brown, Green, Blue, Red
+  
+  if (multiplayerPlayers) {
+    // Use multiplayer player data
+    return Object.values(multiplayerPlayers)
+      .sort((a, b) => a.playerNumber - b.playerNumber)
+      .map((player, i) => ({
+        id: player.playerNumber,
+        name: player.name,
+        color: colors[i] || '#8B4513',
+        pieces: [],
+        pieceCount: { bears: 0, cubs: 0, maxBears: 3, maxCubs: 6 },
+        score: 0
+      }))
+  }
+  
+  return Array.from({ length: playerCount }, (_, i) => ({
+    id: i + 1,
+    name: `Player ${i + 1}`,
+    color: colors[i] || '#8B4513',
+    pieces: [],
+    pieceCount: { bears: 0, cubs: 0, maxBears: 3, maxCubs: 6 },
+    score: 0
+  }))
+}
+
+/**
+ * Sync local state to Yjs with equality checks to prevent unnecessary writes
+ */
+const syncToYjs = (state: CleanGameState) => {
+  if (!gameStateMap || isUpdatingFromYjs) return
+
+  clearTimeout(syncTimeout)
+  syncTimeout = setTimeout(() => {
+    const prev = gameStateMap!.toJSON()
+
+    // Avoid resending if nothing changed (shallow equality check)
+    if (
+      JSON.stringify(prev.players) === JSON.stringify(state.players) &&
+      JSON.stringify(prev.board) === JSON.stringify(state.board) &&
+      prev.currentPlayerIndex === state.currentPlayerIndex &&
+      prev.season === state.season &&
+      prev.year === state.year &&
+      prev.turn === state.turn &&
+      prev.gamePhase === state.gamePhase &&
+      prev.turnPhase === state.turnPhase &&
+      prev.energyTaxPaid === state.energyTaxPaid &&
+      JSON.stringify(prev.diceState) === JSON.stringify(state.diceState)
+    ) {
+      return
     }
-  ]
+
+    console.log('[To Yjs] Sending local update')
+    isUpdatingFromYjs = true
+
+    try {
+      gameStateMap!.set('players', state.players)
+      gameStateMap!.set('board', state.board)
+      gameStateMap!.set('currentPlayerIndex', state.currentPlayerIndex)
+      gameStateMap!.set('season', state.season)
+      gameStateMap!.set('year', state.year)
+      gameStateMap!.set('turn', state.turn)
+      gameStateMap!.set('gamePhase', state.gamePhase)
+      gameStateMap!.set('turnPhase', state.turnPhase)
+      gameStateMap!.set('energyTaxPaid', state.energyTaxPaid)
+      gameStateMap!.set('diceState', state.diceState)
+    } finally {
+      isUpdatingFromYjs = false
+    }
+  }, 50)
 }
 
 export const useGameStore = create<CleanGameState>()(
   devtools(
     (set, get) => ({
-      // Initial state
+      // Initial state - check if we're in a multiplayer room
       board: createInitialBoard(),
-      players: createInitialPlayers(),
+      players: createInitialPlayers(1),
       currentPlayerIndex: 0,
       season: 'Spring',
       year: 1,
@@ -197,57 +300,372 @@ export const useGameStore = create<CleanGameState>()(
       gamePhase: 'setup',
       turnPhase: 'movement',
       energyTaxPaid: false,
+      diceState: {
+        positionRolls: null,
+        directionRolls: null,
+        rotations: [],
+        isRolling: false
+      },
 
       // Multiplayer state
       isMultiplayer: false,
       roomId: null,
       isConnected: false,
       playerName: '',
+      playerId: null,
+      playerNumber: null,
+      roomPlayerCount: 0,
+      maxRoomPlayers: 2,
 
       // Game initialization
       initializeGame: () => {
         set({
           board: createInitialBoard(),
-          players: createInitialPlayers(),
+          players: createInitialPlayers(1),
           currentPlayerIndex: 0,
           season: 'Spring',
           year: 1,
           turn: 1,
           gamePhase: 'playing',
           turnPhase: 'movement',
-          energyTaxPaid: false
+          energyTaxPaid: false,
+          diceState: {
+            positionRolls: null,
+            directionRolls: null,
+            rotations: [],
+            isRolling: false
+          }
         })
       },
 
+      initializeGameWithPlayerCount: (playerCount: number) => {
+        console.log('Initializing game with', playerCount, 'players')
+        const newBoard = createInitialBoard()
+        const newPlayers = createInitialPlayers(playerCount)
+        
+        // Randomly place each player's starting bear
+        const availableSpaces = Object.values(newBoard.spaces).filter(space => 
+          space.ring >= 2 && space.ring <= 4 && space.canProduce
+        )
+        
+        if (availableSpaces.length >= newPlayers.length) {
+          // Shuffle available spaces to get random placement
+          const shuffledSpaces = [...availableSpaces].sort(() => Math.random() - 0.5)
+          
+          newPlayers.forEach((player, playerIndex) => {
+            if (playerIndex < shuffledSpaces.length) {
+              const selectedSpace = shuffledSpaces[playerIndex]
+              
+              // Create starting bear for this player
+              const startingBear: GamePiece = {
+                id: `bear-${player.id}-1`,
+                playerId: player.id,
+                spaceId: selectedSpace.id,
+                type: 'bear',
+                health: 10,
+                resources: {
+                  grains: 0,
+                  berries: 0,
+                  salmon: 0,
+                  honey: 0,
+                  bearMeat: 0
+                },
+                energy: 5,
+                fat: 0,
+                emergencyEnergy: 0,
+                isHibernating: false
+              }
+              
+              // Add bear to player's piece list
+              player.pieces.push(startingBear)
+              player.pieceCount.bears = 1
+              
+              // Place bear on the selected space in the board
+              newBoard.spaces[selectedSpace.id].piece = startingBear
+            }
+          })
+        }
+        
+        set({
+          board: newBoard,
+          players: newPlayers,
+          currentPlayerIndex: 0,
+          season: 'Spring',
+          year: 1,
+          turn: 1,
+          gamePhase: 'playing',
+          turnPhase: 'movement',
+          energyTaxPaid: false,
+          diceState: {
+            positionRolls: null,
+            directionRolls: null,
+            rotations: [],
+            isRolling: false
+          }
+        })
+        
+        // Update Y.js if connected
+        if (gameStateMap) {
+          try {
+            gameStateMap.set('currentPlayerIndex', 0)
+            gameStateMap.set('season', 'Spring')
+            gameStateMap.set('year', 1)
+            gameStateMap.set('turn', 1)
+            gameStateMap.set('gamePhase', 'playing')
+            gameStateMap.set('turnPhase', 'movement')
+            gameStateMap.set('energyTaxPaid', false)
+            gameStateMap.set('diceState', {
+              positionRolls: null,
+              directionRolls: null,
+              rotations: [],
+              isRolling: false
+            })
+          } catch (error) {
+            console.warn('Y.js update error:', error)
+          }
+        }
+      },
+
+      initializeMultiplayerGame: (multiplayerPlayers: { [playerId: string]: { name: string; playerNumber: number } }) => {
+        console.log('Initializing multiplayer game with players:', multiplayerPlayers)
+        const newBoard = createInitialBoard()
+        const newPlayers = createInitialPlayers(2, multiplayerPlayers)
+        
+        // Randomly place each player's starting bear
+        const availableSpaces = Object.values(newBoard.spaces).filter(space => 
+          space.ring >= 2 && space.ring <= 4 && space.canProduce
+        )
+        
+        if (availableSpaces.length >= newPlayers.length) {
+          // Shuffle available spaces to get random placement
+          const shuffledSpaces = [...availableSpaces].sort(() => Math.random() - 0.5)
+          
+          newPlayers.forEach((player, playerIndex) => {
+            if (playerIndex < shuffledSpaces.length) {
+              const selectedSpace = shuffledSpaces[playerIndex]
+              
+              // Create starting bear for this player
+              const startingBear: GamePiece = {
+                id: `bear-${player.id}-1`,
+                playerId: player.id,
+                spaceId: selectedSpace.id,
+                type: 'bear',
+                health: 10,
+                resources: {
+                  grains: 0,
+                  berries: 0,
+                  salmon: 0,
+                  honey: 0,
+                  bearMeat: 0
+                },
+                energy: 5,
+                fat: 0,
+                emergencyEnergy: 0,
+                isHibernating: false
+              }
+              
+              // Add bear to player's piece list
+              player.pieces.push(startingBear)
+              player.pieceCount.bears = 1
+              
+              // Place bear on the selected space in the board
+              newBoard.spaces[selectedSpace.id].piece = startingBear
+            }
+          })
+        }
+        
+        set({
+          board: newBoard,
+          players: newPlayers,
+          currentPlayerIndex: 0,
+          season: 'Spring',
+          year: 1,
+          turn: 1,
+          gamePhase: 'playing',
+          turnPhase: 'movement',
+          energyTaxPaid: false,
+          diceState: {
+            positionRolls: null,
+            directionRolls: null,
+            rotations: [],
+            isRolling: false
+          }
+        })
+        
+        // Update Y.js with the full game state if connected
+        if (gameStateMap) {
+          try {
+            gameStateMap.set('currentPlayerIndex', 0)
+            gameStateMap.set('season', 'Spring')
+            gameStateMap.set('year', 1)
+            gameStateMap.set('turn', 1)
+            gameStateMap.set('gamePhase', 'playing')
+            gameStateMap.set('turnPhase', 'movement')
+            gameStateMap.set('energyTaxPaid', false)
+            gameStateMap.set('diceState', {
+              positionRolls: null,
+              directionRolls: null,
+              rotations: [],
+              isRolling: false
+            })
+            gameStateMap.set('players', newPlayers)
+            gameStateMap.set('board', newBoard)
+            console.log('Synced full game state to Y.js')
+          } catch (error) {
+            console.warn('Y.js update error:', error)
+          }
+        }
+      },
+
       // Multiplayer setup
-      startMultiplayerGame: async (roomId: string, playerName: string) => {
+      startMultiplayerGame: async (roomId: string, playerName: string, playerId: string) => {
         try {
           // Initialize Y.js
           yjsDoc = new Y.Doc()
           yjsProvider = new WebsocketProvider('ws://localhost:1234', roomId, yjsDoc)
           gameStateMap = yjsDoc.getMap('gameState')
+          const playersMap = yjsDoc.getMap('players')
 
-          // Set up sync
+          // Wait a moment for Y.js to sync existing data
+          await new Promise(resolve => setTimeout(resolve, 500))
+
+          // Check if room is full
+          const existingPlayers = playersMap.toJSON()
+          console.log('All players in room:', existingPlayers)
+          
+          const activeExistingPlayers = Object.values(existingPlayers).filter(
+            (p: { isActive: boolean; id: string }) => p.isActive && p.id !== playerId
+          )
+          
+          if (activeExistingPlayers.length >= 2) {
+            throw new Error('Room is full - maximum 2 players allowed')
+          }
+
+          // Determine player number based on existing players
+          let playerNumber = 1
+          
+          // If this player is reconnecting, keep their number
+          if (existingPlayers[playerId] && existingPlayers[playerId].isActive) {
+            playerNumber = existingPlayers[playerId].playerNumber || 1
+            console.log(`Player ${playerId} reconnecting as Player ${playerNumber}`)
+          } else {
+            // Assign the lowest available player number
+            const takenNumbers = activeExistingPlayers.map((p: { playerNumber?: number }) => p.playerNumber || 1)
+            console.log('Taken player numbers:', takenNumbers)
+            
+            for (let i = 1; i <= 2; i++) {
+              if (!takenNumbers.includes(i)) {
+                playerNumber = i
+                break
+              }
+            }
+            console.log(`Assigning new player ${playerId} as Player ${playerNumber}`)
+          }
+
+          // Add this player to the room
+          playersMap.set(playerId, {
+            id: playerId,
+            name: playerName,
+            playerNumber,
+            joinedAt: Date.now(),
+            isActive: true
+          })
+
+          // Set up sync with proper locking to avoid conflicts
           gameStateMap.observe(() => {
-            get().syncWithYjs()
+            if (isUpdatingFromYjs) return // 🔒 Don't sync while we're updating from Y.js
+            
+            console.log('[From Yjs] Applying incoming update')
+            const yjsState = gameStateMap!.toJSON()
+            
+            if (Object.keys(yjsState).length > 0) {
+              isUpdatingFromYjs = true // 🔒 Lock before set()
+              
+              try {
+                set({
+                  players: yjsState.players || get().players,
+                  board: yjsState.board || get().board,
+                  currentPlayerIndex: yjsState.currentPlayerIndex ?? get().currentPlayerIndex,
+                  season: yjsState.season || get().season,
+                  year: yjsState.year ?? get().year,
+                  turn: yjsState.turn ?? get().turn,
+                  gamePhase: yjsState.gamePhase || get().gamePhase,
+                  turnPhase: yjsState.turnPhase || get().turnPhase,
+                  energyTaxPaid: yjsState.energyTaxPaid ?? get().energyTaxPaid,
+                  diceState: yjsState.diceState || get().diceState
+                })
+              } finally {
+                isUpdatingFromYjs = false // 🔓 Always release lock
+              }
+            }
+          })
+
+          // Monitor players joining/leaving
+          playersMap.observe(() => {
+            const currentPlayers = playersMap.toJSON()
+            const activePlayerCount = Object.values(currentPlayers).filter(
+              (p: { isActive: boolean }) => p.isActive
+            ).length
+            
+            set({ roomPlayerCount: activePlayerCount })
+
+            // Start game when 2 players are connected, but only let Player 1 initialize
+            if (activePlayerCount === 2 && get().gamePhase === 'setup') {
+              console.log('Starting multiplayer game with 2 players')
+              console.log('Current players in room:', currentPlayers)
+              console.log('My player info:', { playerId: get().playerId, playerNumber: get().playerNumber })
+              
+              // Only Player 1 should initialize the game to avoid conflicts
+              if (get().playerNumber === 1) {
+                console.log('I am Player 1, initializing the game')
+                
+                // Create multiplayer player data from Y.js
+                const multiplayerPlayers: { [playerId: string]: { name: string; playerNumber: number } } = {}
+                Object.entries(currentPlayers).forEach(([id, player]: [string, { isActive: boolean; name: string; playerNumber: number }]) => {
+                  if (player.isActive) {
+                    multiplayerPlayers[id] = {
+                      name: player.name,
+                      playerNumber: player.playerNumber
+                    }
+                  }
+                })
+                
+                get().initializeMultiplayerGame(multiplayerPlayers)
+              } else {
+                console.log('I am Player 2, waiting for Player 1 to initialize')
+              }
+            }
           })
 
           set({
             isMultiplayer: true,
             roomId,
             playerName,
-            isConnected: true
+            playerId,
+            playerNumber,
+            isConnected: true,
+            roomPlayerCount: Object.keys(playersMap.toJSON()).length
           })
 
-          // Initialize game in multiplayer
-          get().initializeGame()
         } catch (error) {
           console.error('Failed to start multiplayer game:', error)
           set({ isConnected: false })
+          throw error
         }
       },
 
       disconnectFromRoom: () => {
+        const { playerId } = get()
+        
+        // Mark player as inactive before disconnecting
+        if (yjsDoc && playerId) {
+          const playersMap = yjsDoc.getMap('players')
+          const existingPlayer = playersMap.get(playerId)
+          if (existingPlayer) {
+            playersMap.set(playerId, { ...existingPlayer, isActive: false })
+          }
+        }
+
         if (yjsProvider) {
           yjsProvider.destroy()
           yjsProvider = null
@@ -262,7 +680,10 @@ export const useGameStore = create<CleanGameState>()(
           isMultiplayer: false,
           roomId: null,
           isConnected: false,
-          playerName: ''
+          playerName: '',
+          playerId: null,
+          playerNumber: null,
+          roomPlayerCount: 0
         })
       },
 
@@ -361,68 +782,49 @@ export const useGameStore = create<CleanGameState>()(
           turnPhase: engineState.turnPhase,
           energyTaxPaid: engineState.energyTaxPaid
         })
+        
+        // Note: Y.js sync is handled automatically by the store subscription
+        // No manual sync needed here to avoid race conditions
       },
 
       // Board management - delegate to BoardFactory
       updateBoardRotations: (rotations: number[]) => {
         console.log('Updating board with rotations:', rotations)
+        const state = get()
+        
+        // Generate the new board locally first
+        const currentPlayers = state.players
         const newBoard = createInitialBoard(rotations)
-        const newPlayers = createInitialPlayers()
         
-        // Randomly place each player's starting bear
-        const availableSpaces = Object.values(newBoard.spaces).filter(space => 
-          space.ring >= 2 && space.ring <= 4 && space.canProduce
-        )
-        
-        if (availableSpaces.length >= newPlayers.length) {
-          // Shuffle available spaces to get random placement
-          const shuffledSpaces = [...availableSpaces].sort(() => Math.random() - 0.5)
-          
-          newPlayers.forEach((player, playerIndex) => {
-            if (playerIndex < shuffledSpaces.length) {
-              const selectedSpace = shuffledSpaces[playerIndex]
-              
-              // Create starting bear for this player
-              const startingBear: GamePiece = {
-                id: `bear-${player.id}-1`,
-                playerId: player.id,
-                spaceId: selectedSpace.id,
-                type: 'bear',
-                health: 10,
-                resources: {
-                  grains: 0,
-                  berries: 0,
-                  salmon: 0,
-                  honey: 0,
-                  bearMeat: 0
-                },
-                energy: 5,
-                fat: 0,
-                emergencyEnergy: 0,
-                isHibernating: false
-              }
-              
-              // Add bear to player's piece list
-              player.pieces.push(startingBear)
-              player.pieceCount.bears = 1
-              
-              // Place bear on the selected space in the board
-              newBoard.spaces[selectedSpace.id].piece = startingBear
+        // Preserve existing player pieces and their positions
+        currentPlayers.forEach(player => {
+          player.pieces.forEach(piece => {
+            const space = newBoard.spaces[piece.spaceId] || newBoard.bridges[piece.spaceId]
+            if (space) {
+              space.piece = piece
             }
           })
-        }
+        })
         
+        // Update local state immediately
         set({
           board: newBoard,
-          players: newPlayers,
-          currentPlayerIndex: 0,
-          season: 'Spring',
-          year: 1,
-          turn: 1,
-          gamePhase: 'playing',
-          turnPhase: 'movement',
-          energyTaxPaid: false
+          players: currentPlayers
         })
+        
+        // Note: Y.js sync is handled automatically by the store subscription
+        // No manual sync needed here to avoid race conditions
+      },
+
+      // Dice management
+      updateDiceState: (newDiceState: Partial<DiceTrayState>) => {
+        const state = get()
+        const updatedDiceState = { ...state.diceState, ...newDiceState }
+        
+        set({ diceState: updatedDiceState })
+        
+        // Note: Y.js sync is handled automatically by the store subscription
+        // No manual sync needed here to avoid race conditions
       },
 
       // Utility functions
@@ -455,37 +857,158 @@ export const useGameStore = create<CleanGameState>()(
       },
 
       resetGame: () => {
-        get().initializeGame()
+        // Disconnect from multiplayer if connected
+        if (get().isConnected) {
+          get().disconnectFromRoom()
+        }
+        
+        set({
+          board: createInitialBoard(),
+          players: createInitialPlayers(1),
+          currentPlayerIndex: 0,
+          season: 'Spring',
+          year: 1,
+          turn: 1,
+          gamePhase: 'setup',
+          turnPhase: 'movement',
+          energyTaxPaid: false,
+          diceState: {
+            positionRolls: null,
+            directionRolls: null,
+            rotations: [],
+            isRolling: false
+          }
+        })
+        
+        // Clear URL parameters
+        if (typeof window !== 'undefined') {
+          window.history.replaceState({}, '', window.location.pathname)
+        }
       },
 
       syncWithYjs: () => {
         if (!gameStateMap) return
 
-        const state = get()
-        const syncableState = {
-          board: state.board,
-          players: state.players,
-          currentPlayerIndex: state.currentPlayerIndex,
-          season: state.season,
-          year: state.year,
-          turn: state.turn,
-          gamePhase: state.gamePhase,
-          turnPhase: state.turnPhase,
-          energyTaxPaid: state.energyTaxPaid
-        }
-
-        // Update from Y.js if different
-        const yjsState = gameStateMap.toJSON()
-        if (JSON.stringify(yjsState) !== JSON.stringify(syncableState)) {
-          if (Object.keys(yjsState).length > 0) {
-            // Apply Y.js state to local state
-            set(yjsState as Partial<CleanGameState>)
-          } else {
-            // Push local state to Y.js
-            Object.entries(syncableState).forEach(([key, value]) => {
-              gameStateMap!.set(key, value)
-            })
+        try {
+          const state = get()
+          
+          // Get the full game state from Y.js
+          const yjsGameState = {
+            currentPlayerIndex: gameStateMap.get('currentPlayerIndex'),
+            season: gameStateMap.get('season'),
+            year: gameStateMap.get('year'),
+            turn: gameStateMap.get('turn'),
+            gamePhase: gameStateMap.get('gamePhase'),
+            turnPhase: gameStateMap.get('turnPhase'),
+            energyTaxPaid: gameStateMap.get('energyTaxPaid'),
+            players: gameStateMap.get('players'),
+            board: gameStateMap.get('board'),
+            boardRotations: gameStateMap.get('boardRotations'),
+            diceState: gameStateMap.get('diceState')
           }
+
+          // Handle dice state changes specifically
+          if (yjsGameState.diceState && typeof yjsGameState.diceState === 'object') {
+            const currentDiceState = state.diceState
+            const newDiceState = yjsGameState.diceState
+            
+            if (JSON.stringify(currentDiceState) !== JSON.stringify(newDiceState)) {
+              console.log('Applying dice state update from Y.js:', newDiceState)
+              set({ diceState: newDiceState as DiceTrayState })
+            }
+          }
+
+          // Handle board rotation changes specifically
+          if (yjsGameState.boardRotations && Array.isArray(yjsGameState.boardRotations)) {
+            const currentRotations = state.board.rotations
+            const newRotations = yjsGameState.boardRotations
+            
+            if (JSON.stringify(currentRotations) !== JSON.stringify(newRotations)) {
+              console.log('Applying board rotation update from Y.js:', newRotations)
+              
+              // Create new board with updated rotations
+              const newBoard = createInitialBoard(newRotations)
+              
+              // Preserve existing player pieces and their positions
+              state.players.forEach(player => {
+                player.pieces.forEach(piece => {
+                  const space = newBoard.spaces[piece.spaceId] || newBoard.bridges[piece.spaceId]
+                  if (space) {
+                    space.piece = piece
+                  }
+                })
+              })
+              
+              set({ board: newBoard })
+              return // Exit early to avoid double updates
+            }
+          }
+
+          // Only apply Y.js state if we have valid data and it's different
+          if (yjsGameState.gamePhase && yjsGameState.players && yjsGameState.board) {
+            const hasChanges = 
+              yjsGameState.gamePhase !== state.gamePhase ||
+              yjsGameState.currentPlayerIndex !== state.currentPlayerIndex ||
+              JSON.stringify(yjsGameState.players) !== JSON.stringify(state.players) ||
+              JSON.stringify(yjsGameState.board) !== JSON.stringify(state.board)
+
+            if (hasChanges) {
+              console.log('Applying Y.js game state update:', yjsGameState)
+              
+              // Don't reset to setup if we're already playing
+              const newGamePhase = yjsGameState.gamePhase === 'setup' && state.gamePhase === 'playing' 
+                ? state.gamePhase 
+                : yjsGameState.gamePhase
+              
+              // Type check and safely apply Y.js values
+              const updateData: Partial<CleanGameState> = {
+                // Keep local multiplayer state
+                isMultiplayer: state.isMultiplayer,
+                roomId: state.roomId,
+                isConnected: state.isConnected,
+                playerName: state.playerName,
+                playerId: state.playerId,
+                playerNumber: state.playerNumber,
+                roomPlayerCount: state.roomPlayerCount,
+                maxRoomPlayers: state.maxRoomPlayers
+              }
+              
+              if (typeof yjsGameState.currentPlayerIndex === 'number') {
+                updateData.currentPlayerIndex = yjsGameState.currentPlayerIndex
+              }
+              if (typeof yjsGameState.season === 'string') {
+                updateData.season = yjsGameState.season as 'Spring' | 'Summer' | 'Autumn' | 'Winter'
+              }
+              if (typeof yjsGameState.year === 'number') {
+                updateData.year = yjsGameState.year
+              }
+              if (typeof yjsGameState.turn === 'number') {
+                updateData.turn = yjsGameState.turn
+              }
+              if (typeof newGamePhase === 'string') {
+                updateData.gamePhase = newGamePhase as 'setup' | 'playing' | 'ended'
+              }
+              if (typeof yjsGameState.turnPhase === 'string') {
+                updateData.turnPhase = yjsGameState.turnPhase as 'movement' | 'harvest' | 'eat' | 'hibernation'
+              }
+              if (typeof yjsGameState.energyTaxPaid === 'boolean') {
+                updateData.energyTaxPaid = yjsGameState.energyTaxPaid
+              }
+              if (Array.isArray(yjsGameState.players)) {
+                updateData.players = yjsGameState.players
+              }
+              if (yjsGameState.board && typeof yjsGameState.board === 'object') {
+                updateData.board = yjsGameState.board as Board
+              }
+              if (yjsGameState.diceState && typeof yjsGameState.diceState === 'object') {
+                updateData.diceState = yjsGameState.diceState as DiceTrayState
+              }
+              
+              set(updateData)
+            }
+          }
+        } catch (error) {
+          console.warn('Y.js sync error:', error)
         }
       }
     }),
@@ -501,11 +1024,19 @@ export const useGameStore = create<CleanGameState>()(
         turn: state.turn,
         gamePhase: state.gamePhase,
         turnPhase: state.turnPhase,
-        energyTaxPaid: state.energyTaxPaid
+        energyTaxPaid: state.energyTaxPaid,
+        diceState: state.diceState
       })
     }
   )
 )
+
+// Subscribe to store changes to sync with Yjs (only when in multiplayer mode)
+useGameStore.subscribe((state) => {
+  if (state.isMultiplayer && gameStateMap) {
+    syncToYjs(state)
+  }
+})
 
 // Export for global access (for debugging and action creators)
 if (typeof window !== 'undefined') {

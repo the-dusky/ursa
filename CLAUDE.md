@@ -11,6 +11,7 @@ Always look at tasks/todo.md for next steps
 
 - use pnpm for package management
   - do not use npm
+- use `docker compose` not `docker-compose` (modern Docker command)
   
 ## Tasks
 
@@ -105,3 +106,63 @@ This is a **multiplayer board game application** ("Seasonal Board Game") built w
 - Main game logic is in game store and components but needs integration
 - Project uses both npm (main) and has pnpm-lock.yaml present
 - WebSocket server needs implementation before multiplayer features work
+
+## Known Patterns & Solutions
+
+### Y.js Race Condition Fix (Implemented)
+
+**Problem**: When Client A updates Yjs, Client B receives the update and triggers Zustand set(), which fires store subscription and calls syncToYjs(), potentially overwriting A's fresh data with B's stale copy.
+
+**Solution Pattern** (implemented in `gameStore.ts:552-578`):
+1. **Lock Pattern**: Use `isUpdatingFromYjs` flag to prevent recursive updates
+   - Set `isUpdatingFromYjs = true` BEFORE calling `set()` in observer
+   - Check flag in `syncToYjs` to avoid sending updates while receiving them
+2. **Shallow Equality Check**: Compare current vs previous state using JSON.stringify
+3. **Debounced Sync**: Use setTimeout(50ms) to batch rapid local changes
+4. **Debug Logging**: Track update sources with console.log
+
+**Files Modified**: 
+- `apps/frontend/src/store/gameStore.ts` (lines 145-166, 241-284, 552-578, 1039-1044)
+
+**Prevention**: Always implement this pattern when adding new Yjs synchronization to prevent data corruption in multiplayer scenarios.
+
+### Y.js Boolean State Synchronization Fix (Implemented)
+
+**Problem**: Player 2 was not being asked for energy tax on their first turn because boolean `false` values were being incorrectly overridden by local fallback values in multiplayer synchronization.
+
+**Root Cause**: Using logical OR (`||`) instead of nullish coalescing (`??`) for boolean state fields:
+```typescript
+// WRONG - false values fallback to local state
+energyTaxPaid: yjsState.energyTaxPaid || get().energyTaxPaid
+
+// CORRECT - only null/undefined values fallback  
+energyTaxPaid: yjsState.energyTaxPaid ?? get().energyTaxPaid
+```
+
+**Solution**: Use nullish coalescing (`??`) for boolean and numeric fields in Yjs observer (line 594).
+
+**Files Modified**: 
+- `apps/frontend/src/store/gameStore.ts` (line 594)
+
+**Prevention**: Always use `??` instead of `||` for boolean and numeric state synchronization in multiplayer games.
+
+### Multiplayer UI Update Race Condition Fix (Implemented)
+
+**Problem**: Local UI changes (like energy tax payment) were not immediately reflecting on the current player's screen but were visible on other players' screens. UI updates would only appear after a phase change or other state update.
+
+**Root Cause**: Double synchronization to Yjs was creating race conditions:
+1. Action methods manually synced to Yjs immediately
+2. Store subscription also synced to Yjs with 50ms debounce  
+3. Remote Yjs updates could override local changes during this timing window
+
+**Solution**: Remove all manual `gameStateMap.set()` calls from action methods and rely solely on the store subscription for Yjs synchronization.
+
+**Files Modified**:
+- `apps/frontend/src/store/gameStore.ts` (lines 786-800, 816-825, 835-842)
+
+**Methods Fixed**:
+- `updateFromEngineState` - removed manual energy tax sync
+- `updateBoardRotations` - removed manual board/player sync  
+- `updateDiceState` - removed manual dice state sync
+
+**Prevention**: Never manually sync to Yjs in action methods - let the store subscription handle all Yjs synchronization to avoid race conditions.
