@@ -74,6 +74,12 @@ export function GameSetup() {
     
     if (!targetRoomId || !targetPlayerName) return
     
+    console.log(`\n👋 ===== USER JOINING ROOM =====`)
+    console.log(`🏠 Target Room ID: ${targetRoomId}`)
+    console.log(`👤 Target Player Name: ${targetPlayerName}`)
+    console.log(`🏗️ Is Creating Room: ${isCreatingRoom}`)
+    console.log(`🆔 Custom Player ID: ${customPlayerId || 'none - will generate'}`)
+    
     setIsJoining(true)
     try {
       // Store player name and room ID for future sessions
@@ -82,6 +88,9 @@ export function GameSetup() {
       
       // Use provided player ID or generate one
       const playerId = customPlayerId || generatePlayerId()
+      
+      console.log(`🆔 Final Player ID: ${playerId}`)
+      console.log(`\n🚪 Calling joinMultiplayerRoom...`)
       
       await joinMultiplayerRoom(targetRoomId, targetPlayerName, playerId)
       
@@ -147,23 +156,41 @@ export function GameSetup() {
       if (!playerName.trim()) return
       
       try {
+        console.log(`\n🎮 ===== USER CREATING GAME =====`)
+        console.log(`👤 Creator Name: ${playerName.trim()}`)
+        console.log(`👥 Player Count: ${selectedPlayerCount}`)
+        
         const newRoomId = `room-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
         const creatorId = generatePlayerId()
+        
+        console.log(`🏠 Generated Room ID: ${newRoomId}`)
+        console.log(`🆔 Generated Creator ID: ${creatorId}`)
+        
+        console.log(`\n🏗️ Calling createRoomWithSlots...`)
         
         // Create room with pre-assigned player slots (this creates Y.js connection)
         const inviteLinks = await createRoomWithSlots(newRoomId, selectedPlayerCount, playerName.trim(), creatorId)
         
+        console.log(`✅ Room created successfully! Received invite links:`, inviteLinks)
+        
         // Add to created rooms list with additional metadata
         addCreatedRoom(newRoomId, `${playerName}'s Game`)
+        console.log(`✅ Added room to created rooms list`)
         
         // Store invite links for sharing
         localStorage.setItem(`room-${newRoomId}-invites`, JSON.stringify(inviteLinks))
+        console.log(`✅ Stored invite links in localStorage`)
         
         // Set up room state
         setRoomId(newRoomId)
+        console.log(`✅ Set local room ID state`)
+        
+        console.log(`\n🚪 Now joining room as creator...`)
         
         // Join the room as the creator (Y.js connection already exists)
         await joinMultiplayerRoom(newRoomId, playerName.trim(), creatorId)
+        
+        console.log(`\n🎉 ===== ROOM CREATION & JOIN COMPLETE =====`)
         
       } catch (error) {
         console.error('Failed to create room:', error)
