@@ -45,6 +45,7 @@ export function GameSetup() {
   const [playerName, setPlayerName] = useState('')
   const [isJoining, setIsJoining] = useState(false)
   const [origin, setOrigin] = useState('')
+  const [joinError, setJoinError] = useState<string | null>(null)
   
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -90,6 +91,7 @@ export function GameSetup() {
       }
     } catch (error) {
       console.error('Failed to join room:', error)
+      setJoinError(error instanceof Error ? error.message : 'Failed to join room')
       setIsJoining(false)
     }
   }, [roomId, playerName, searchParams, router, startMultiplayerGame])
@@ -316,15 +318,33 @@ export function GameSetup() {
                   <Input
                     placeholder="Enter your player name"
                     value={playerName}
-                    onChange={(e) => setPlayerName(e.target.value)}
+                    onChange={(e) => {
+                      setPlayerName(e.target.value)
+                      if (joinError) setJoinError(null) // Clear error when typing
+                    }}
                     maxLength={20}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && playerName.trim()) {
-                        handleJoinRoom(urlRoomId, playerName.trim())
+                        const playerId = urlPlayerId || generatePlayerId()
+                        handleJoinRoom(urlRoomId, playerName.trim(), false, playerId)
                       }
                     }}
                   />
                 </div>
+                
+                {/* Show error message if join failed */}
+                {joinError && (
+                  <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                    <p className="text-sm text-red-700 dark:text-red-300">
+                      ❌ {joinError}
+                    </p>
+                    {joinError.includes('Invalid player ID') && (
+                      <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                        Please make sure you&apos;re using the correct invite link.
+                      </p>
+                    )}
+                  </div>
+                )}
                 
                 <Button 
                   onClick={() => {

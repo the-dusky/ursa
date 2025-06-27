@@ -26,14 +26,19 @@ function HomeContent() {
   // Check if user is accessing a room URL without being properly registered
   useEffect(() => {
     const roomId = searchParams?.get('room')
+    const playerId = searchParams?.get('player')
+    
     if (roomId && gamePhase === 'setup') {
-      // Give some time for the store to initialize and attempt connection
+      // If there's a player ID in the URL, they have a valid invite - give more time
+      const timeoutDuration = playerId ? 5000 : 3000 // 5 seconds with player ID, 3 without
+      
       const checkTimeout = setTimeout(() => {
-        if (!isValidPlayerInRoom()) {
-          console.log('Invalid room access - redirecting to lobby')
+        // Don't redirect if they have a valid player ID - let them see an error message instead
+        if (!playerId && !isValidPlayerInRoom()) {
+          console.log('Invalid room access without player ID - redirecting to lobby')
           router.push('/')
         }
-      }, 2000) // Wait 2 seconds for connection attempt
+      }, timeoutDuration)
 
       return () => clearTimeout(checkTimeout)
     }
