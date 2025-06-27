@@ -75,8 +75,9 @@ export function GameSetup() {
     
     setIsJoining(true)
     try {
-      // Store player name for future sessions
+      // Store player name and room ID for future sessions
       sessionStorage.setItem('player-name', targetPlayerName)
+      sessionStorage.setItem('last-room-id', targetRoomId)
       
       // Use provided player ID or generate one
       const playerId = customPlayerId || generatePlayerId()
@@ -117,9 +118,10 @@ export function GameSetup() {
       if (urlRoomId) {
         setRoomId(urlRoomId)
         
-        // Auto-rejoin room if we have a saved name (likely a refresh/hot reload)
-        if (savedName && !isConnected) {
-          console.log('Auto-rejoining room after page refresh')
+        // Only auto-rejoin if we were previously in THIS specific room
+        const lastRoomId = sessionStorage.getItem('last-room-id')
+        if (savedName && !isConnected && lastRoomId === urlRoomId) {
+          console.log('Auto-rejoining same room after page refresh')
           handleJoinRoom(urlRoomId, savedName)
         }
       }
