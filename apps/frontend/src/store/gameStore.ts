@@ -532,9 +532,9 @@ export const useGameStore = create<CleanGameState>()(
       // Multiplayer setup
       createRoomWithSlots: async (roomId: string, playerCount: number, creatorName: string, creatorId: string) => {
         try {
-          console.log(`🏠 Creating room ${roomId} for ${playerCount} players`)
+          console.log(`🏠 Creating room slots for ${roomId} with ${playerCount} players`)
           
-          // Create player slots
+          // Create player slots (just the metadata, don't create Y.js connection yet)
           const playerSlots: { [playerNumber: number]: { id: string; reserved: boolean; joinedAt?: number } } = {}
           
           // Player 1 is the room creator
@@ -552,35 +552,16 @@ export const useGameStore = create<CleanGameState>()(
             }
           }
           
-          // Initialize Y.js connection for room
-          const wsUrl = process.env.NODE_ENV === 'development' 
-            ? (process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:1234')
-            : (process.env.NEXT_PUBLIC_WS_URL || 'wss://ursa-game-server.up.railway.app')
-            
-          console.log(`🔌 Connecting to WebSocket: ${wsUrl}`)
+          // Store slots in a global variable to be used when Y.js connection is made
+          const roomConfig = {
+            playerCount,
+            createdAt: Date.now(),
+            createdBy: creatorName,
+            playerSlots
+          }
           
-          yjsDoc = new Y.Doc()
-          yjsProvider = new WebsocketProvider(wsUrl, roomId, yjsDoc)
-          
-          // Set up Y.js maps
-          gameStateMap = yjsDoc.getMap('gameState')
-          const playersMap = yjsDoc.getMap('players')
-          const roomConfigMap = yjsDoc.getMap('roomConfig')
-          
-          // Store room configuration with player slots
-          roomConfigMap.set('playerCount', playerCount)
-          roomConfigMap.set('createdAt', Date.now())
-          roomConfigMap.set('createdBy', creatorName)
-          roomConfigMap.set('playerSlots', playerSlots)
-          
-          // Add creator to players map
-          playersMap.set(creatorId, {
-            id: creatorId,
-            name: creatorName,
-            playerNumber: 1,
-            joinedAt: Date.now(),
-            isActive: true
-          })
+          // Store room config in localStorage temporarily (Y.js will persist it properly)
+          localStorage.setItem(`room-${roomId}-config`, JSON.stringify(roomConfig))
           
           // Generate invite links for each slot
           const inviteLinks: { [playerNumber: number]: { id: string; inviteLink: string } } = {}
@@ -660,9 +641,27 @@ export const useGameStore = create<CleanGameState>()(
           // Wait a moment for Y.js to sync existing data
           await new Promise(resolve => setTimeout(resolve, 500))
 
-          // Validate player ID against room slots
+          // Set up room config if this is the room creator
           const roomConfigMap = yjsDoc.getMap('roomConfig')
-          const playerSlots = roomConfigMap.get('playerSlots')
+          let playerSlots = roomConfigMap.get('playerSlots')
+          
+          // If no room config exists, check if we have it stored locally (room creator)
+          if (!playerSlots) {
+            const storedConfig = localStorage.getItem(`room-${roomId}-config`)
+            if (storedConfig) {
+              console.log('🏠 Setting up room config from localStorage')
+              const roomConfig = JSON.parse(storedConfig)
+              roomConfigMap.set('playerCount', roomConfig.playerCount)
+              roomConfigMap.set('createdAt', roomConfig.createdAt)
+              roomConfigMap.set('createdBy', roomConfig.createdBy)
+              roomConfigMap.set('playerSlots', roomConfig.playerSlots)
+              playerSlots = roomConfig.playerSlots
+              // Clean up localStorage
+              localStorage.removeItem(`room-${roomId}-config`)
+            }
+          }
+
+          // Validate player ID against room slots
           
           if (playerSlots) {
             console.log('🎫 Validating player ID against room slots:', playerSlots)

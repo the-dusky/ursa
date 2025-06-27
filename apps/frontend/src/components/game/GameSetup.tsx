@@ -162,9 +162,8 @@ export function GameSetup() {
         // Set up room state
         setRoomId(newRoomId)
         
-        // Redirect to the room with the creator's player ID
-        const creatorLink = inviteLinks[1].inviteLink
-        router.push(creatorLink)
+        // Join the room directly with the creator ID instead of redirecting
+        await handleJoinRoom(newRoomId, playerName.trim(), true, creatorId)
         
       } catch (error) {
         console.error('Failed to create room:', error)
