@@ -6,7 +6,6 @@
  */
 
 import { WebSocketServer } from 'ws'
-import * as Y from 'yjs'
 import { setupWSConnection } from 'y-websocket/bin/utils'
 import http from 'http'
 
