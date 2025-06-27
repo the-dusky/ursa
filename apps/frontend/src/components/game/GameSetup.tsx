@@ -216,6 +216,82 @@ export function GameSetup() {
     )
   }
 
+  // Show simplified join interface if accessing a room via URL
+  const urlRoomId = searchParams?.get('room')
+  if (urlRoomId && !isConnected) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <Card>
+            <CardHeader className="text-center">
+              <CardTitle className="text-2xl">🎮 Join Game</CardTitle>
+              <p className="text-slate-600 dark:text-slate-400">
+                You&apos;ve been invited to join a game!
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="text-center space-y-4">
+                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <p className="text-sm text-blue-700 dark:text-blue-300 mb-2">
+                    Room ID:
+                  </p>
+                  <p className="text-lg font-mono bg-white dark:bg-slate-800 px-3 py-2 rounded border">
+                    {urlRoomId}
+                  </p>
+                </div>
+                
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">Your Name</label>
+                  <Input
+                    placeholder="Enter your player name"
+                    value={playerName}
+                    onChange={(e) => setPlayerName(e.target.value)}
+                    maxLength={20}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && playerName.trim()) {
+                        handleJoinRoom(urlRoomId, playerName.trim())
+                      }
+                    }}
+                  />
+                </div>
+                
+                <Button 
+                  onClick={() => handleJoinRoom(urlRoomId, playerName.trim())}
+                  disabled={!playerName.trim() || isJoining}
+                  className="w-full h-12 text-lg font-semibold"
+                  size="lg"
+                >
+                  {isJoining ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Joining Game...
+                    </>
+                  ) : (
+                    `Join Game as ${playerName.trim() || '[Name]'}`
+                  )}
+                </Button>
+                
+                <div className="text-center pt-4">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      // Remove room from URL and go to main lobby
+                      router.push('/')
+                    }}
+                    className="text-slate-600 hover:text-slate-700"
+                  >
+                    ← Back to Lobby
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center p-4">
       <div className="w-full max-w-6xl space-y-6">
