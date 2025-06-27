@@ -459,6 +459,23 @@ export const useGameStore = create<CleanGameState>()(
       // Multiplayer setup
       startMultiplayerGame: async (roomId: string, playerName: string, playerId: string) => {
         try {
+          // Prevent multiple simultaneous connection attempts
+          if (get().isConnected) {
+            console.log('🔌 Already connected, skipping duplicate connection attempt')
+            return
+          }
+
+          // Cleanup any existing connections to prevent duplicates
+          if (yjsProvider) {
+            console.log('🔌 Cleaning up existing WebSocket connection')
+            yjsProvider.destroy()
+            yjsProvider = null
+          }
+          if (yjsDoc) {
+            yjsDoc.destroy()
+            yjsDoc = null
+          }
+          
           // Initialize Y.js with environment-specific WebSocket URL
           yjsDoc = new Y.Doc()
           const wsUrl = process.env.NEXT_PUBLIC_YJS_SERVER || 'ws://localhost:1234'
