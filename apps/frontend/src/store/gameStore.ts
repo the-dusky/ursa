@@ -119,6 +119,7 @@ export interface CleanGameState {
   roomPlayerCount: number
   maxRoomPlayers: number
   createdRooms: CreatedRoom[]
+  isGameStarted: boolean
 
   // Game actions - delegate to engine
   initializeGame: () => void
@@ -152,6 +153,9 @@ export interface CleanGameState {
   
   // Room validation
   isValidPlayerInRoom: () => boolean
+  
+  // Game start control
+  startGameInRoom: () => void
 }
 
 // Y.js integration
@@ -160,6 +164,7 @@ let yjsProvider: WebsocketProvider | null = null
 let gameStateMap: Y.Map<unknown> | null = null
 let isUpdatingFromYjs = false // 🔒 Lock to prevent race conditions
 let syncTimeout: NodeJS.Timeout
+let isConnecting = false // 🔒 Lock to prevent multiple connection attempts
 
 // Create a singleton game engine instance for setup operations
 const gameEngine = new GameEngine()
@@ -180,6 +185,40 @@ function getCreatedRoomsFromStorage(): CreatedRoom[] {
 function saveCreatedRoomsToStorage(rooms: CreatedRoom[]) {
   if (typeof window === 'undefined') return
   localStorage.setItem(CREATED_ROOMS_KEY, JSON.stringify(rooms))
+}
+
+// WebSocket connection management
+function cleanupConnection() {
+  console.log('🧹 Cleaning up WebSocket connection')
+  
+  if (yjsProvider) {
+    try {
+      yjsProvider.destroy()
+    } catch (error) {
+      console.warn('Error destroying Y.js provider:', error)
+    }
+    yjsProvider = null
+  }
+  
+  if (yjsDoc) {
+    try {
+      yjsDoc.destroy()
+    } catch (error) {
+      console.warn('Error destroying Y.js document:', error)
+    }
+    yjsDoc = null
+  }
+  
+  gameStateMap = null
+  isConnecting = false
+}
+
+function isConnectionActive(): boolean {
+  return !!(
+    yjsProvider && 
+    yjsProvider.ws && 
+    yjsProvider.ws.readyState === WebSocket.OPEN
+  )
 }
 
 /**
@@ -357,6 +396,7 @@ export const useGameStore = create<CleanGameState>()(
       roomPlayerCount: 0,
       maxRoomPlayers: 4,
       createdRooms: getCreatedRoomsFromStorage(),
+      isGameStarted: false,
 
       // Game initialization
       initializeGame: () => {
@@ -494,40 +534,54 @@ export const useGameStore = create<CleanGameState>()(
       // Multiplayer setup
       startMultiplayerGame: async (roomId: string, playerName: string, playerId: string) => {
         try {
-          // Check if WebSocket is already open for this room
-          if (yjsProvider && yjsDoc) {
-            const currentRoomId = get().roomId
-            if (currentRoomId === roomId && yjsProvider.ws?.readyState === WebSocket.OPEN) {
-              console.log(`🔌 WebSocket already open for room ${roomId}, skipping connection`)
-              return
-            }
-          }
-
+          console.log(`🔌 startMultiplayerGame called: ${roomId}, ${playerName}, ${playerId}`)
+          
           // Prevent multiple simultaneous connection attempts
-          if (get().isConnected) {
-            console.log('🔌 Already connected, skipping duplicate connection attempt')
+          if (isConnecting) {
+            console.log('🔌 Connection already in progress, skipping')
             return
           }
-
-          // Cleanup any existing connections to prevent duplicates
-          if (yjsProvider) {
-            console.log('🔌 Cleaning up existing WebSocket connection')
-            yjsProvider.destroy()
-            yjsProvider = null
+          
+          // Check if we already have an active connection for this room
+          if (isConnectionActive() && get().roomId === roomId) {
+            console.log(`🔌 Already connected to room ${roomId}, skipping`)
+            return
           }
-          if (yjsDoc) {
-            yjsDoc.destroy()
-            yjsDoc = null
+          
+          // Check if already connected to different room
+          if (get().isConnected) {
+            console.log('🔌 Already connected to different room, skipping to prevent conflicts')
+            return
           }
+          
+          // Set connecting flag
+          isConnecting = true
+          console.log('🔒 Setting connecting flag')
+          
+          // Cleanup any existing connections
+          cleanupConnection()
           
           // Initialize Y.js with environment-specific WebSocket URL
           yjsDoc = new Y.Doc()
           const wsUrl = process.env.NEXT_PUBLIC_YJS_SERVER || 'ws://localhost:1234'
           
-          console.log(`🔌 Connecting to WebSocket: ${wsUrl}`)
+          console.log(`🔌 Creating new WebSocket connection to: ${wsUrl}`)
           console.log(`🎮 Player ID: ${playerId}`)
           console.log(`🏠 Room ID: ${roomId}`)
+          
           yjsProvider = new WebsocketProvider(wsUrl, roomId, yjsDoc)
+          
+          // Monitor connection state
+          yjsProvider.on('status', (event: { status: string }) => {
+            console.log(`🔌 Y.js connection status: ${event.status}`)
+            if (event.status === 'connected') {
+              isConnecting = false
+              console.log('🔓 Clearing connecting flag - connected')
+            } else if (event.status === 'disconnected') {
+              isConnecting = false
+              console.log('🔓 Clearing connecting flag - disconnected')
+            }
+          })
           gameStateMap = yjsDoc.getMap('gameState')
           const playersMap = yjsDoc.getMap('players')
 
@@ -614,31 +668,12 @@ export const useGameStore = create<CleanGameState>()(
             
             set({ roomPlayerCount: activePlayerCount })
 
-            // Start game when 2-4 players are connected, but only let Player 1 initialize
-            if (activePlayerCount >= 2 && activePlayerCount <= 4 && get().gamePhase === 'setup') {
-              console.log(`Starting multiplayer game with ${activePlayerCount} players`)
-              console.log('Current players in room:', currentPlayers)
-              console.log('My player info:', { playerId: get().playerId, playerNumber: get().playerNumber })
-              
-              // Only Player 1 should initialize the game to avoid conflicts
-              if (get().playerNumber === 1) {
-                console.log('I am Player 1, initializing the game')
-                
-                // Create multiplayer player data from Y.js
-                const multiplayerPlayers: { [playerId: string]: { name: string; playerNumber: number } } = {}
-                Object.entries(currentPlayers).forEach(([id, player]: [string, { isActive: boolean; name: string; playerNumber: number }]) => {
-                  if (player.isActive) {
-                    multiplayerPlayers[id] = {
-                      name: player.name,
-                      playerNumber: player.playerNumber
-                    }
-                  }
-                })
-                
-                get().initializeMultiplayerGame(multiplayerPlayers)
-              } else {
-                console.log('I am Player 2, waiting for Player 1 to initialize')
-              }
+            // Update isGameStarted flag but don't auto-start the game
+            if (activePlayerCount >= 2 && activePlayerCount <= 4) {
+              set({ isGameStarted: false }) // Game ready but not started
+              console.log(`Room ready with ${activePlayerCount} players - waiting for manual start`)
+            } else {
+              set({ isGameStarted: false }) // Not enough players
             }
           })
 
@@ -654,7 +689,16 @@ export const useGameStore = create<CleanGameState>()(
 
         } catch (error) {
           console.error('Failed to start multiplayer game:', error)
-          set({ isConnected: false })
+          isConnecting = false
+          console.log('🔓 Clearing connecting flag - error')
+          cleanupConnection()
+          set({ 
+            isConnected: false,
+            isMultiplayer: false,
+            roomId: null,
+            playerNumber: null,
+            playerId: null
+          })
           throw error
         }
       },
@@ -662,24 +706,23 @@ export const useGameStore = create<CleanGameState>()(
       disconnectFromRoom: () => {
         const { playerId } = get()
         
+        console.log('🔌 Disconnecting from room')
+        
         // Mark player as inactive before disconnecting
         if (yjsDoc && playerId) {
-          const playersMap = yjsDoc.getMap('players')
-          const existingPlayer = playersMap.get(playerId)
-          if (existingPlayer) {
-            playersMap.set(playerId, { ...existingPlayer, isActive: false })
+          try {
+            const playersMap = yjsDoc.getMap('players')
+            const existingPlayer = playersMap.get(playerId)
+            if (existingPlayer) {
+              playersMap.set(playerId, { ...existingPlayer, isActive: false })
+            }
+          } catch (error) {
+            console.warn('Error marking player inactive:', error)
           }
         }
 
-        if (yjsProvider) {
-          yjsProvider.destroy()
-          yjsProvider = null
-        }
-        if (yjsDoc) {
-          yjsDoc.destroy()
-          yjsDoc = null
-        }
-        gameStateMap = null
+        // Use centralized cleanup
+        cleanupConnection()
 
         set({
           isMultiplayer: false,
@@ -1061,6 +1104,42 @@ export const useGameStore = create<CleanGameState>()(
           state.playerNumber &&
           state.playerName
         )
+      },
+
+      // Game start control
+      startGameInRoom: () => {
+        const state = get()
+        if (!state.isMultiplayer || !state.isConnected || state.roomPlayerCount < 2) {
+          console.log('Cannot start game - not enough players')
+          return
+        }
+
+        // Only Player 1 should initialize the game to avoid conflicts
+        if (state.playerNumber === 1) {
+          console.log('Starting multiplayer game as Player 1')
+          
+          // Get current players from Y.js
+          if (yjsDoc) {
+            const playersMap = yjsDoc.getMap('players')
+            const currentPlayers = playersMap.toJSON()
+            
+            // Create multiplayer player data from Y.js
+            const multiplayerPlayers: { [playerId: string]: { name: string; playerNumber: number } } = {}
+            Object.entries(currentPlayers).forEach(([id, player]: [string, { isActive: boolean; name: string; playerNumber: number }]) => {
+              if (player.isActive) {
+                multiplayerPlayers[id] = {
+                  name: player.name,
+                  playerNumber: player.playerNumber
+                }
+              }
+            })
+            
+            get().initializeMultiplayerGame(multiplayerPlayers)
+            set({ isGameStarted: true })
+          }
+        } else {
+          console.log('Only Player 1 can start the game')
+        }
       }
     }),
     {
@@ -1088,6 +1167,24 @@ useGameStore.subscribe((state) => {
     syncToYjs(state)
   }
 })
+
+// Debug: Log game state every 30 seconds
+if (typeof window !== 'undefined') {
+  setInterval(() => {
+    const state = useGameStore.getState()
+    console.log('🎮 GAME STATE DEBUG:', {
+      gamePhase: state.gamePhase,
+      isMultiplayer: state.isMultiplayer,
+      isConnected: state.isConnected,
+      isGameStarted: state.isGameStarted,
+      roomId: state.roomId,
+      roomPlayerCount: state.roomPlayerCount,
+      playerNumber: state.playerNumber,
+      playerName: state.playerName,
+      playerId: state.playerId
+    })
+  }, 30000) // Every 30 seconds
+}
 
 // Export for global access (for debugging and action creators)
 if (typeof window !== 'undefined') {

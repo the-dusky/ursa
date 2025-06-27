@@ -12,6 +12,11 @@ import { useRouter, useSearchParams } from 'next/navigation'
 
 // Generate unique player ID per browser tab
 function generatePlayerId(): string {
+  // Only run on client side
+  if (typeof window === 'undefined') {
+    return ''
+  }
+  
   // Get base player identity from localStorage (persists across browser restarts)
   let basePlayerId = localStorage.getItem('base-player-id')
   if (!basePlayerId) {
@@ -29,6 +34,7 @@ export function GameSetup() {
   const [roomId, setRoomId] = useState('')
   const [playerName, setPlayerName] = useState('')
   const [isJoining, setIsJoining] = useState(false)
+  const [origin, setOrigin] = useState('')
   
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -74,8 +80,18 @@ export function GameSetup() {
     }
   }, [roomId, playerName, searchParams, router, startMultiplayerGame])
 
+  // Set origin on client side
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      setOrigin(window.location.origin)
+    }
+  }, [])
+
   // Check for room in URL on mount and load saved player name
   useEffect(() => {
+    // Only run on client side
+    if (typeof window === 'undefined') return
+    
     // Load saved player name
     const savedName = sessionStorage.getItem('player-name') || ''
     if (!playerName && savedName) {
@@ -126,12 +142,15 @@ export function GameSetup() {
   }
 
   const generateRoomId = () => {
+    if (typeof window === 'undefined') return
     const randomId = `room-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
     setRoomId(randomId)
   }
 
   const copyRoomLink = () => {
-    const roomLink = `${window.location.origin}/?room=${roomId}`
+    if (typeof window === 'undefined') return
+    
+    const roomLink = `${origin}/?room=${roomId}`
     navigator.clipboard.writeText(roomLink).then(() => {
       // Could add a toast notification here
       console.log('Room link copied to clipboard')
@@ -177,7 +196,7 @@ export function GameSetup() {
                   <div className="flex items-center space-x-2">
                     <input
                       type="text"
-                      value={`${window.location.origin}/?room=${currentRoomId}`}
+                      value={origin ? `${origin}/?room=${currentRoomId}` : `Loading...`}
                       readOnly
                       className="flex-1 px-3 py-2 text-sm bg-white dark:bg-slate-800 border rounded-md"
                     />
@@ -471,7 +490,7 @@ export function GameSetup() {
                       </Button>
                       <Button
                         onClick={() => {
-                          const roomLink = `${window.location.origin}/?room=${room.id}`
+                          const roomLink = `${origin}/?room=${room.id}`
                           navigator.clipboard.writeText(roomLink)
                         }}
                         variant="outline"
