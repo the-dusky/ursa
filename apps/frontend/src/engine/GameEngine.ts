@@ -114,7 +114,16 @@ export class GameEngine {
       newEmergencyEnergy -= emergencyUsed
     }
 
-    // Update state
+    // Create the updated piece with movement flag
+    const updatedPiece: CoreGamePiece = {
+      ...piece,
+      spaceId: action.toSpaceId,
+      energy: newEnergy,
+      emergencyEnergy: newEmergencyEnergy,
+      movedThisTurn: true  // Mark that this piece moved this turn
+    }
+
+    // Update state with consistent piece data in both board and players
     const newState: CoreGameState = {
       ...state,
       board: {
@@ -127,26 +136,18 @@ export class GameEngine {
           },
           [action.toSpaceId]: {
             ...toSpace,
-            piece: {
-              ...piece,
-              spaceId: action.toSpaceId,
-              energy: newEnergy,
-              emergencyEnergy: newEmergencyEnergy
-            }
+            piece: updatedPiece  // Use the same updated piece
           }
         }
       }
     }
 
+    // Log the movement for debugging
+    console.log(`🚶 Movement: Piece ${piece.id} movedThisTurn = true (moved from ${action.fromSpaceId} to ${action.toSpaceId})`)
+    
     return {
       success: true,
-      state: this.updatePieceInPlayers(newState, {
-        ...piece,
-        spaceId: action.toSpaceId,
-        energy: newEnergy,
-        emergencyEnergy: newEmergencyEnergy,
-        movedThisTurn: true  // Mark that this piece moved this turn
-      }),
+      state: this.updatePieceInPlayers(newState, updatedPiece),
       message: `Moved piece using ${totalCost} energy`
     }
   }
@@ -250,13 +251,16 @@ export class GameEngine {
     }
 
     // New rule: Bears that stayed on the same space get no harvest
+    console.log(`🌾 Harvest: Checking piece ${piece.id} movedThisTurn = ${piece.movedThisTurn}`)
     if (!piece.movedThisTurn) {
+      console.log(`❌ Harvest blocked: Piece ${piece.id} did not move this turn`)
       return { 
         success: true, 
         state: state, 
         message: 'No harvest - bear must move to gather resources' 
       }
     }
+    console.log(`✅ Harvest allowed: Piece ${piece.id} moved this turn`)
 
     const production = this.config.resources.seasonalProduction[state.season]
     const newResources = { ...piece.resources }
@@ -497,6 +501,10 @@ export class GameEngine {
       turnPhase: 'movement'
     }
     
+    // Reset movement flags when advancing to next player's turn
+    console.log(`🔄 Turn advancement: Resetting movement flags for all pieces`)
+    newState = this.resetMovementFlags(newState)
+    
     // Advance to next player
     newState.currentPlayerIndex = (state.currentPlayerIndex + 1) % state.players.length
     
@@ -531,10 +539,6 @@ export class GameEngine {
       turnPhase: phaseOrder[nextIndex]
     }
 
-    // Reset movement flags when entering movement phase (start of new player's turn)
-    if (phaseOrder[nextIndex] === 'movement') {
-      newState = this.resetMovementFlags(newState)
-    }
 
     return {
       success: true,
@@ -868,6 +872,13 @@ export class GameEngine {
         movedThisTurn: false  // Reset movement flag for new turn
       }))
     }))
+    
+    // Log the reset for debugging
+    newState.players.forEach((player, playerIndex) => {
+      player.pieces.forEach((piece, pieceIndex) => {
+        console.log(`🏃 Reset: Player ${playerIndex + 1} Piece ${pieceIndex + 1} (${piece.id}) movedThisTurn = false`)
+      })
+    })
     
     return newState
   }

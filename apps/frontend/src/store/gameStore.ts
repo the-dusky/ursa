@@ -1107,7 +1107,8 @@ export const useGameStore = create<CleanGameState>()(
                     energy: space.piece.energy,
                     fat: space.piece.fat,
                     emergencyEnergy: space.piece.emergencyEnergy,
-                    isHibernating: space.piece.isHibernating
+                    isHibernating: space.piece.isHibernating,
+                    movedThisTurn: space.piece.movedThisTurn
                   } : null,
                   canProduce: space.canProduce,
                   hasHoney: space.hasHoney,
@@ -1135,7 +1136,8 @@ export const useGameStore = create<CleanGameState>()(
                     energy: space.piece.energy,
                     fat: space.piece.fat,
                     emergencyEnergy: space.piece.emergencyEnergy,
-                    isHibernating: space.piece.isHibernating
+                    isHibernating: space.piece.isHibernating,
+                    movedThisTurn: space.piece.movedThisTurn
                   } : null,
                   canProduce: space.canProduce,
                   hasHoney: space.hasHoney,
@@ -1160,7 +1162,8 @@ export const useGameStore = create<CleanGameState>()(
               energy: piece.energy,
               fat: piece.fat,
               emergencyEnergy: piece.emergencyEnergy,
-              isHibernating: piece.isHibernating
+              isHibernating: piece.isHibernating,
+              movedThisTurn: piece.movedThisTurn
             })),
             pieceCount: player.pieceCount,
             score: player.score
