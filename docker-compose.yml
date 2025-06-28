@@ -18,6 +18,8 @@ services:
       # Mount for development hot reload (optional)
       - ./apps/server:/app
       - /app/node_modules
+      # Mount for Y.js LevelDB persistence
+      - ./data/yjs-db:/app/db
     networks:
       - game-network
     healthcheck:

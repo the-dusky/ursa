@@ -96,6 +96,14 @@ export interface CreatedRoom {
   lastUsed: string
 }
 
+export interface RoomConfig {
+  playerCount: number
+  createdBy: string
+  gameStarted: boolean
+  createdAt: number
+  playerSlots: { [playerNumber: number]: { id: string; reserved: boolean } }
+}
+
 export interface CleanGameState {
   // Core game state
   board: Board
@@ -159,6 +167,12 @@ export interface CleanGameState {
   
   // Game start control
   startGameInRoom: () => void
+  
+  // Get all players in current room
+  getAllPlayersInRoom: () => { [playerId: string]: { name: string; playerNumber: number; isActive: boolean; joinedAt: number } }
+  
+  // Get room configuration
+  getRoomConfig: () => Partial<RoomConfig> | null
 }
 
 // Y.js integration
@@ -188,28 +202,38 @@ function saveCreatedRoomsToStorage(rooms: CreatedRoom[]) {
 
 // WebSocket connection management
 function cleanupConnection() {
-  console.log('🧹 Cleaning up WebSocket connection')
+  console.log('🧹 ===== CLEANING UP WEBSOCKET CONNECTION =====')
   
   if (yjsProvider) {
     try {
+      console.log('🗑️ Destroying Y.js provider...')
       yjsProvider.destroy()
+      console.log('✅ Y.js provider destroyed')
     } catch (error) {
-      console.warn('Error destroying Y.js provider:', error)
+      console.warn('❌ Error destroying Y.js provider:', error)
     }
     yjsProvider = null
+  } else {
+    console.log('ℹ️ No Y.js provider to destroy')
   }
   
   if (yjsDoc) {
     try {
+      console.log('🗑️ Destroying Y.js document...')
       yjsDoc.destroy()
+      console.log('✅ Y.js document destroyed')
     } catch (error) {
-      console.warn('Error destroying Y.js document:', error)
+      console.warn('❌ Error destroying Y.js document:', error)
     }
     yjsDoc = null
+  } else {
+    console.log('ℹ️ No Y.js document to destroy')
   }
   
   gameStateMap = null
   isConnecting = false
+  
+  console.log('✅ Connection cleanup complete')
 }
 
 function isConnectionActive(): boolean {
@@ -340,6 +364,7 @@ const syncToYjs = (state: CleanGameState) => {
       prev.gamePhase === state.gamePhase &&
       prev.turnPhase === state.turnPhase &&
       prev.energyTaxPaid === state.energyTaxPaid &&
+      prev.isGameStarted === state.isGameStarted &&
       JSON.stringify(prev.diceState) === JSON.stringify(state.diceState)
     ) {
       return
@@ -358,6 +383,7 @@ const syncToYjs = (state: CleanGameState) => {
       gameStateMap!.set('gamePhase', state.gamePhase)
       gameStateMap!.set('turnPhase', state.turnPhase)
       gameStateMap!.set('energyTaxPaid', state.energyTaxPaid)
+      gameStateMap!.set('isGameStarted', state.isGameStarted)
       gameStateMap!.set('diceState', state.diceState)
     } finally {
       isUpdatingFromYjs = false
@@ -625,6 +651,28 @@ export const useGameStore = create<CleanGameState>()(
           console.log(`   🎮 Game Started: ${roomConfig.gameStarted}`)
           console.log(`   🎪 Player Slots:`, roomConfig.playerSlots)
           
+          // CRITICAL: Wait for Y.js document to sync to server before proceeding
+          console.log(`⏳ Waiting for Y.js document to sync to server...`)
+          await new Promise<void>((resolve) => {
+            let syncAttempts = 0
+            const maxAttempts = 10
+            
+            const checkSync = () => {
+              syncAttempts++
+              
+              // Check if the provider is connected and has synced
+              if (yjsProvider?.synced || syncAttempts >= maxAttempts) {
+                console.log(`✅ Y.js document synced to server after ${syncAttempts} attempts`)
+                resolve()
+              } else {
+                console.log(`🔄 Sync attempt ${syncAttempts}/${maxAttempts}...`)
+                setTimeout(checkSync, 200) // Wait 200ms between checks
+              }
+            }
+            
+            checkSync()
+          })
+          
           console.log(`\n🎫 ===== STEP 5: GENERATING INVITE LINKS =====`)
           
           // Generate invite links for each slot
@@ -834,7 +882,7 @@ export const useGameStore = create<CleanGameState>()(
           console.log(`✅ Player added to Y.js server successfully`)
 
           // Set up sync with proper locking to avoid conflicts
-          gameStateMap.observe(() => {
+          gameStateMap?.observe(() => {
             if (isUpdatingFromYjs) return // 🔒 Don't sync while we're updating from Y.js
             
             console.log('[From Yjs] Applying incoming update')
@@ -854,6 +902,7 @@ export const useGameStore = create<CleanGameState>()(
                   gamePhase: yjsState.gamePhase || get().gamePhase,
                   turnPhase: yjsState.turnPhase || get().turnPhase,
                   energyTaxPaid: yjsState.energyTaxPaid ?? get().energyTaxPaid,
+                  isGameStarted: yjsState.isGameStarted ?? get().isGameStarted,
                   diceState: yjsState.diceState || get().diceState
                 })
               } finally {
@@ -884,27 +933,71 @@ export const useGameStore = create<CleanGameState>()(
           
           const finalRoomPlayerCount = Object.keys(playersMap.toJSON()).length
           
-          const localState = {
-            isMultiplayer: true,
-            roomId,
-            playerName,
-            playerId,
-            playerNumber,
-            isConnected: true,
-            roomPlayerCount: finalRoomPlayerCount
+          // Get room config using event-driven approach (no more polling!)
+          const updateStateWithConfig = (roomConfig: Partial<RoomConfig>) => {
+            const roomMaxPlayers = roomConfig.playerCount || 4
+            console.log(`📋 Room config synced:`, roomConfig)
+            console.log(`📊 Room Config - Max Players: ${roomMaxPlayers}, Current: ${finalRoomPlayerCount}`)
+            
+            const localState = {
+              isMultiplayer: true,
+              roomId,
+              playerName,
+              playerId,
+              playerNumber,
+              isConnected: true,
+              roomPlayerCount: finalRoomPlayerCount,
+              maxRoomPlayers: roomMaxPlayers
+            }
+            
+            console.log(`📝 Setting local state:`, localState)
+            set(localState)
+            console.log(`✅ Local state updated successfully`)
           }
           
-          console.log(`📝 Setting local state:`, localState)
-          
-          set(localState)
-          
-          console.log(`✅ Local state updated successfully`)
+          // Check if room config is already available
+          const currentRoomConfig = roomConfigMap.toJSON() as Partial<RoomConfig>
+          if (currentRoomConfig.playerCount && Object.keys(currentRoomConfig).length > 0) {
+            // Config is already synced
+            console.log(`✅ Room config already available`)
+            updateStateWithConfig(currentRoomConfig)
+          } else {
+            // Wait for room config to sync via Y.js observer
+            console.log(`🔄 Setting up room config observer...`)
+            
+            const configObserver = () => {
+              const roomConfig = roomConfigMap.toJSON() as Partial<RoomConfig>
+              if (roomConfig.playerCount && Object.keys(roomConfig).length > 0) {
+                console.log(`🎯 Room config observer triggered - config ready!`)
+                updateStateWithConfig(roomConfig)
+                // Unsubscribe after first successful sync
+                roomConfigMap.unobserve(configObserver)
+                console.log(`🔄 Room config observer unsubscribed`)
+              } else {
+                console.log(`🔄 Room config observer triggered but config still empty:`, roomConfig)
+              }
+            }
+            
+            // Subscribe to room config changes
+            roomConfigMap.observe(configObserver)
+            console.log(`👂 Room config observer active - waiting for sync...`)
+            
+            // Fallback: if no sync after 5 seconds, proceed with default
+            setTimeout(() => {
+              const fallbackConfig = roomConfigMap.toJSON() as Partial<RoomConfig>
+              if (!fallbackConfig.playerCount) {
+                console.log(`⚠️ Room config sync timeout - using fallback (4 players)`)
+                roomConfigMap.unobserve(configObserver)
+                updateStateWithConfig({ playerCount: 4 })
+              }
+            }, 5000)
+          }
           console.log(`\n🎉 ===== JOIN ROOM COMPLETE =====`)
           console.log(`🏠 Room: ${roomId}`)
           console.log(`👤 Player: ${playerName} (${playerId})`)
           console.log(`🔢 Player Number: ${playerNumber}`)
           console.log(`👥 Room Player Count: ${finalRoomPlayerCount}`)
-          console.log(`🔗 Connected: ${localState.isConnected}`)
+          console.log(`🔗 Connected: ${get().isConnected}`)
           console.log(`⏰ Completed at: ${new Date().toLocaleTimeString()}`)
 
         } catch (error) {
@@ -1401,6 +1494,20 @@ export const useGameStore = create<CleanGameState>()(
         } else {
           console.log('Only Player 1 can start the game')
         }
+      },
+      
+      // Get all players in current room
+      getAllPlayersInRoom: () => {
+        if (!yjsDoc) return {}
+        const playersMap = yjsDoc.getMap('players')
+        return playersMap.toJSON() as { [playerId: string]: { name: string; playerNumber: number; isActive: boolean; joinedAt: number } }
+      },
+      
+      // Get room configuration
+      getRoomConfig: () => {
+        if (!yjsDoc) return null
+        const roomConfigMap = yjsDoc.getMap('roomConfig')
+        return roomConfigMap.toJSON() as Partial<RoomConfig>
       }
     }),
     {

@@ -6,7 +6,9 @@
  */
 
 import { WebSocketServer } from 'ws'
-import { setupWSConnection } from 'y-websocket/bin/utils'
+import { setupWSConnection, setPersistence } from 'y-websocket/bin/utils'
+import { LeveldbPersistence } from 'y-leveldb'
+import * as Y from 'yjs'
 import http from 'http'
 
 const PORT = process.env.PORT || 1234
@@ -22,6 +24,61 @@ const log = (message, level = 'INFO') => {
 log(`🚀 Starting Y.js WebSocket server`)
 log(`📍 Environment: ${NODE_ENV}`)
 log(`🌐 Host: ${HOST}:${PORT}`)
+
+// Initialize LevelDB persistence
+const ldb = new LeveldbPersistence('./db')
+log(`💾 LevelDB persistence initialized at ./db`)
+
+// Configure y-websocket to use our persistence
+setPersistence({
+  provider: ldb,
+  bindState: async (docName, ydoc) => {
+    try {
+      // Load existing data from LevelDB
+      const persistedYdoc = await ldb.getYDoc(docName)
+      const persistedStateVector = Y.encodeStateVector(persistedYdoc)
+      const diff = Y.encodeStateAsUpdate(persistedYdoc, Y.encodeStateVector(ydoc))
+      
+      // Apply persisted state to the new document
+      if (diff.length > 0) {
+        Y.applyUpdate(ydoc, diff)
+        log(`📥 Loaded persisted state for room: ${docName} (${diff.length} bytes)`)
+      }
+      
+      // Subscribe to updates
+      ydoc.on('update', update => {
+        ldb.storeUpdate(docName, update)
+      })
+      
+      log(`🔗 Persistence bound for room: ${docName}`)
+    } catch (err) {
+      log(`⚠️ Error binding persistence for ${docName}: ${err.message}`, 'WARN')
+    }
+  },
+  writeState: async (docName, ydoc) => {
+    // This is called when all clients disconnect
+    const update = Y.encodeStateAsUpdate(ydoc)
+    await ldb.storeUpdate(docName, update)
+    log(`💾 Persisted final state for room: ${docName}`)
+  }
+})
+
+// Graceful persistence cleanup
+const cleanupPersistence = () => {
+  return new Promise((resolve) => {
+    if (ldb) {
+      ldb.destroy().then(() => {
+        log(`💾 LevelDB persistence cleaned up`)
+        resolve()
+      }).catch((err) => {
+        log(`❌ Error cleaning up persistence: ${err.message}`, 'ERROR')
+        resolve()
+      })
+    } else {
+      resolve()
+    }
+  })
+}
 
 // Create HTTP server for health checks
 const server = http.createServer((req, res) => {
@@ -66,8 +123,11 @@ wss.on('connection', (ws, req) => {
     log(`🏠 Client ${clientId} joined room: ${roomName}`)
   }
   
-  // Set up Y.js connection
-  setupWSConnection(ws, req)
+  // Set up Y.js connection (persistence is now handled globally)
+  setupWSConnection(ws, req, {
+    docName: roomName || 'default',
+    gc: true // Enable garbage collection
+  })
   
   // Handle disconnection
   ws.on('close', () => {
@@ -94,7 +154,7 @@ wss.on('error', (error) => {
 server.listen(PORT, HOST, () => {
   log(`✅ Y.js WebSocket server ready on ws://${HOST}:${PORT}`)
   log(`🏥 Health check available at http://${HOST}:${PORT}/health`)
-  log(`🎮 Using standard y-websocket protocol`)
+  log(`🎮 Using y-websocket protocol with LevelDB persistence`)
   
   if (NODE_ENV === 'development') {
     log(`🔧 Press Ctrl+C to stop`, 'DEBUG')
@@ -102,7 +162,7 @@ server.listen(PORT, HOST, () => {
 })
 
 // Enhanced graceful shutdown
-const gracefulShutdown = (signal) => {
+const gracefulShutdown = async (signal) => {
   log(`🛑 Received ${signal}, shutting down gracefully...`)
   
   // Close all WebSocket connections
@@ -110,8 +170,9 @@ const gracefulShutdown = (signal) => {
     ws.close(1000, 'Server shutting down')
   })
   
-  // Close the server
-  server.close(() => {
+  // Close the server and cleanup persistence
+  server.close(async () => {
+    await cleanupPersistence()
     log('✅ Server stopped')
     process.exit(0)
   })

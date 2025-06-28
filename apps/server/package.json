@@ -29,7 +29,8 @@
   },
   "dependencies": {
     "ws": "^8.14.2",
-    "yjs": "^13.6.27",
-    "y-websocket": "^2.0.0"
+    "y-leveldb": "^0.2.0",
+    "y-websocket": "^2.0.0",
+    "yjs": "^13.6.27"
   }
 }

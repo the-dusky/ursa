@@ -65,7 +65,10 @@ export function GameSetup() {
     addCreatedRoom,
     removeCreatedRoom,
     updateRoomLastUsed,
-    loadCreatedRooms
+    loadCreatedRooms,
+    getAllPlayersInRoom,
+    getRoomConfig,
+    startGameInRoom
   } = useGameStore()
 
   const handleJoinRoom = useCallback(async (customRoomId?: string, customPlayerName?: string, isCreatingRoom?: boolean, customPlayerId?: string) => {
@@ -167,6 +170,8 @@ export function GameSetup() {
         console.log(`🆔 Generated Creator ID: ${creatorId}`)
         
         console.log(`\n🏗️ Calling createRoomWithSlots...`)
+        console.log(`🔢 Selected Player Count: ${selectedPlayerCount}`)
+        console.log(`📝 Parameters: roomId=${newRoomId}, playerCount=${selectedPlayerCount}, creatorName=${playerName.trim()}, creatorId=${creatorId}`)
         
         // Create room with pre-assigned player slots (this creates Y.js connection)
         const inviteLinks = await createRoomWithSlots(newRoomId, selectedPlayerCount, playerName.trim(), creatorId)
@@ -190,6 +195,9 @@ export function GameSetup() {
         // Join the room as the creator (Y.js connection already exists)
         await joinMultiplayerRoom(newRoomId, playerName.trim(), creatorId)
         
+        // Update URL to include creator's player ID for proper invite link format
+        router.push(`/?room=${newRoomId}&player=${creatorId}`)
+        
         console.log(`\n🎉 ===== ROOM CREATION & JOIN COMPLETE =====`)
         
       } catch (error) {
@@ -200,6 +208,7 @@ export function GameSetup() {
         setRoomId(newRoomId)
         const fallbackId = generatePlayerId()
         await joinMultiplayerRoom(newRoomId, playerName.trim(), fallbackId)
+        router.push(`/?room=${newRoomId}&player=${fallbackId}`)
       }
     }
   }
@@ -213,7 +222,7 @@ export function GameSetup() {
   const copyRoomLink = () => {
     if (typeof window === 'undefined') return
     
-    const roomLink = `${origin}/?room=${roomId}`
+    const roomLink = `${origin}/?room=${currentRoomId || roomId}`
     navigator.clipboard.writeText(roomLink).then(() => {
       // Could add a toast notification here
       console.log('Room link copied to clipboard')
@@ -241,15 +250,48 @@ export function GameSetup() {
                   </span>
                 </div>
                 
-                <div className="flex items-center justify-center space-x-4 py-4">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                    <span>Player 1 (You)</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 bg-gray-300 rounded-full animate-pulse"></div>
-                    <span className="text-gray-500">Waiting for Player 2...</span>
-                  </div>
+                <div className="flex flex-col items-center space-y-2 py-4">
+                  {(() => {
+                    const allPlayers = getAllPlayersInRoom()
+                    const roomConfig = getRoomConfig()
+                    const actualRoomSize = roomConfig?.playerCount || maxRoomPlayers || 2
+                    
+                    // Debug logging to console
+                    console.log('🐛 PLAYER DISPLAY DEBUG:')
+                    console.log(`  roomConfig:`, roomConfig)
+                    console.log(`  roomConfig?.playerCount:`, roomConfig?.playerCount)
+                    console.log(`  maxRoomPlayers:`, maxRoomPlayers)
+                    console.log(`  actualRoomSize:`, actualRoomSize)
+                    console.log(`  allPlayers count:`, Object.keys(allPlayers).length)
+                    
+                    const playerList = []
+                    
+                    // Create array of player slots (1 to actualRoomSize)
+                    for (let playerNum = 1; playerNum <= actualRoomSize; playerNum++) {
+                      const playerData = Object.values(allPlayers).find(p => p.playerNumber === playerNum && p.isActive)
+                      const isCurrentPlayer = playerData && playerNumber === playerNum
+                      
+                      if (playerData) {
+                        // Player slot is filled
+                        playerList.push(
+                          <div key={playerNum} className="flex items-center space-x-2">
+                            <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                            <span>Player {playerNum}{isCurrentPlayer ? ' (You)' : ''}: {playerData.name}</span>
+                          </div>
+                        )
+                      } else {
+                        // Player slot is empty
+                        playerList.push(
+                          <div key={playerNum} className="flex items-center space-x-2">
+                            <div className="w-3 h-3 bg-gray-300 rounded-full animate-pulse"></div>
+                            <span className="text-gray-500">Waiting for Player {playerNum}...</span>
+                          </div>
+                        )
+                      }
+                    }
+                    
+                    return playerList
+                  })()}
                 </div>
                 
                 {/* Show player-specific invite links if available */}
@@ -306,6 +348,41 @@ export function GameSetup() {
                       </div>
                     )
                   }
+                })()}
+                
+                {/* Start Game Button - show when enough players joined and current player is creator */}
+                {(() => {
+                  const allPlayers = getAllPlayersInRoom()
+                  const roomConfig = getRoomConfig()
+                  const actualRoomSize = roomConfig?.playerCount || maxRoomPlayers || 2
+                  const activePlayerCount = Object.values(allPlayers).filter(p => p.isActive).length
+                  const isRoomCreator = playerNumber === 1
+                  const hasEnoughPlayers = activePlayerCount >= actualRoomSize
+                  
+                  if (hasEnoughPlayers) {
+                    if (isRoomCreator) {
+                      return (
+                        <div className="pt-4 border-t">
+                          <Button 
+                            onClick={() => startGameInRoom()}
+                            className="w-full bg-green-600 hover:bg-green-700"
+                            size="lg"
+                          >
+                            🎮 Start Game ({activePlayerCount} Players)
+                          </Button>
+                        </div>
+                      )
+                    } else {
+                      return (
+                        <div className="pt-4 border-t text-center">
+                          <p className="text-slate-600 dark:text-slate-400">
+                            Waiting for Player 1 to start the game...
+                          </p>
+                        </div>
+                      )
+                    }
+                  }
+                  return null
                 })()}
               </div>
             </CardContent>
