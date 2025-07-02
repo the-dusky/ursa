@@ -16,19 +16,36 @@ import { MultiplayerControls } from '@/components/game/MultiplayerControls'
 import { RulesDialog } from '@/components/game/RulesDialog'
 import { RulesReferenceCard } from '@/components/game/RulesReferenceCard'
 import { GameSetup } from '@/components/game/GameSetup'
-import { useGameStore } from '@/store/gameStore'
+import { BearPlacement } from '@/components/game/BearPlacement'
+import { useStateCoordinator } from '@/state/StateCoordinator'
+import { useMultiplayerStore } from '@/state/MultiplayerStore'
 
 function HomeContent() {
-  const { gamePhase, players, isMultiplayer, playerName, playerNumber, isValidPlayerInRoom, isGameStarted } = useGameStore()
+  const { gameState } = useStateCoordinator()
+  const { 
+    isConnected: isMultiplayer,
+    playerName,
+    playerNumber,
+    roomId,
+    connectedPlayers
+  } = useMultiplayerStore()
+  
   const searchParams = useSearchParams()
   const router = useRouter()
 
+  const isValidPlayerInRoom = () => {
+    return isMultiplayer && playerNumber && Object.keys(connectedPlayers).length > 0
+  }
+
+  // Check if we should show the game interface or the initial setup screen
+  const shouldShowGameInterface = gameState.players.length > 0
+
   // Check if user is accessing a room URL without being properly registered
   useEffect(() => {
-    const roomId = searchParams?.get('room')
+    const roomIdParam = searchParams?.get('room')
     const playerId = searchParams?.get('player')
     
-    if (roomId && gamePhase === 'setup') {
+    if (roomIdParam && gameState.gamePhase === 'setup') {
       // If there's a player ID in the URL, they have a valid invite - give more time
       const timeoutDuration = playerId ? 5000 : 3000 // 5 seconds with player ID, 3 without
       
@@ -42,24 +59,24 @@ function HomeContent() {
 
       return () => clearTimeout(checkTimeout)
     }
-  }, [searchParams, gamePhase, isValidPlayerInRoom, router])
+  }, [searchParams, gameState.gamePhase, router])
 
   // Sort players so current player appears first
   const sortedPlayers = React.useMemo(() => {
-    if (!isMultiplayer || !playerNumber || players.length <= 1) {
-      return players // For single player or when not in multiplayer, use default order
+    if (!isMultiplayer || !playerNumber || gameState.players.length <= 1) {
+      return gameState.players // For single player or when not in multiplayer, use default order
     }
 
     // Find current player and other players
-    const currentPlayer = players.find(p => p.id === playerNumber)
-    const otherPlayers = players.filter(p => p.id !== playerNumber)
+    const currentPlayer = gameState.players.find(p => p.id === String(playerNumber))
+    const otherPlayers = gameState.players.filter(p => p.id !== String(playerNumber))
     
     // Return array with current player first, then others
-    return currentPlayer ? [currentPlayer, ...otherPlayers] : players
-  }, [players, isMultiplayer, playerNumber])
+    return currentPlayer ? [currentPlayer, ...otherPlayers] : gameState.players
+  }, [gameState.players, isMultiplayer, playerNumber])
 
-  // Show setup screen if game hasn't started yet
-  if (!isGameStarted) {
+  // Show initial setup screen only when no game has been initialized
+  if (!shouldShowGameInterface) {
     return (
       <Suspense fallback={<div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 flex items-center justify-center">
         <div className="text-center">
@@ -112,6 +129,9 @@ function HomeContent() {
           
           {/* Center Column - Player Controls & Game Board */}
           <main className="lg:col-span-2 space-y-4">
+            {/* Bear Placement Phase */}
+            <BearPlacement />
+            
             {/* Current Player Controls - Above board */}
             {sortedPlayers.length > 0 && (
               <PlayerControlCard playerId={String(sortedPlayers[0]?.id)} />
@@ -136,7 +156,6 @@ function HomeContent() {
             <MultiplayerControls />
           </aside>
         </div>
-
 
         {/* Rules Dialog */}
         <RulesDialog />

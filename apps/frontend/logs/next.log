@@ -1,0 +1,19 @@
+
+> frontend@0.1.0 dev /Users/the_dusky/code/sandox/ursa/apps/frontend
+> next dev --turbopack --port 8347
+
+   ▲ Next.js 15.3.3 (Turbopack)
+   - Local:        http://localhost:8347
+   - Network:      http://192.168.86.32:8347
+   - Environments: .env.local
+
+ ✓ Starting...
+ ✓ Ready in 953ms
+ ○ Compiling / ...
+Debugger listening on ws://127.0.0.1:59125/9a7983f2-9c97-48cc-9240-76c8c61f56fc
+For help, see: https://nodejs.org/en/docs/inspector
+Debugger attached.
+ ✓ Compiled / in 2.7s
+ GET / 200 in 2949ms
+ GET / 200 in 63ms
+[?25h

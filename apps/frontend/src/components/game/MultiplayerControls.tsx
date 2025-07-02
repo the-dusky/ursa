@@ -1,8 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { useGameStore } from '@/store/gameStore'
-import { useGameLog } from '@/store/uiStore'
+import { useCoordinatedGameActions } from '@/state/StateCoordinator'
+import { useMultiplayerStore } from '@/state/MultiplayerStore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -19,18 +19,16 @@ import {
 } from 'lucide-react'
 
 export function MultiplayerControls() {
-  const { 
-    isMultiplayer, 
-    isConnected, 
-    roomId, 
+  const {
+    isConnected: isMultiplayer,
+    roomId,
     playerName,
     playerNumber,
-    roomPlayerCount,
-    joinMultiplayerRoom,
+    connectedPlayers,
     disconnectFromRoom
-  } = useGameStore()
+  } = useMultiplayerStore()
   
-  const { addLogMessage } = useGameLog()
+  const isConnected = isMultiplayer
   
   const [showJoinDialog, setShowJoinDialog] = useState(false)
   const [showCreateDialog, setShowCreateDialog] = useState(false)
@@ -51,8 +49,8 @@ export function MultiplayerControls() {
     setIsLoading(true)
     try {
       const newRoomId = generateRoomId()
-      const playerId = `player-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
-      await joinMultiplayerRoom(newRoomId, inputPlayerName.trim(), playerId)
+      // TODO: Implement room creation from within game
+      console.log('Create room from game UI - not implemented yet:', newRoomId, inputPlayerName.trim())
       setShowCreateDialog(false)
       setInputPlayerName('')
     } catch (error) {
@@ -71,8 +69,8 @@ export function MultiplayerControls() {
 
     setIsLoading(true)
     try {
-      const playerId = `player-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
-      await joinMultiplayerRoom(inputRoomId.trim(), inputPlayerName.trim(), playerId)
+      // TODO: Implement room joining from within game 
+      console.log('Join room from game UI - not implemented yet:', inputRoomId.trim(), inputPlayerName.trim())
       setShowJoinDialog(false)
       setInputRoomId('')
       setInputPlayerName('')
@@ -87,7 +85,7 @@ export function MultiplayerControls() {
   const copyRoomId = () => {
     if (roomId) {
       navigator.clipboard.writeText(roomId)
-      addLogMessage('Room ID copied to clipboard!')
+      console.log('Room ID copied to clipboard!')
     }
   }
 
@@ -95,9 +93,10 @@ export function MultiplayerControls() {
     if (roomId) {
       const shareUrl = `${window.location.origin}?room=${roomId}`
       navigator.clipboard.writeText(shareUrl)
-      addLogMessage('Share link copied to clipboard!')
+      console.log('Share link copied to clipboard!')
     }
   }
+
 
   if (isMultiplayer) {
     return (
@@ -122,20 +121,8 @@ export function MultiplayerControls() {
         <CardContent className="space-y-4">
           {/* Player Info */}
           <div className="p-3 rounded-lg bg-slate-700/50 border border-slate-600">
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm text-slate-300">You are:</div>
-              {playerNumber && (
-                <Badge className="bg-blue-500 text-white font-bold">
-                  Player {playerNumber}
-                </Badge>
-              )}
-            </div>
-            <div className="font-medium text-slate-200 text-lg">{playerName}</div>
-            {roomPlayerCount && (
-              <div className="text-xs text-slate-400 mt-1">
-                {roomPlayerCount}/2 players connected
-              </div>
-            )}
+            <div className="text-sm text-slate-300 mb-1">Your Name</div>
+            <div className="font-medium text-slate-200">{playerName}</div>
           </div>
 
           {/* Room Info */}

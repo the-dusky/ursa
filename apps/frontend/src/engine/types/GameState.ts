@@ -6,7 +6,7 @@
  */
 
 export type Season = 'Spring' | 'Summer' | 'Autumn' | 'Winter'
-export type GamePhase = 'setup' | 'playing' | 'ended'
+export type GamePhase = 'setup' | 'bear_placement' | 'playing' | 'ended'
 export type TurnPhase = 'movement' | 'harvest' | 'eat' | 'hibernation'
 export type ResourceType = 'grains' | 'berries' | 'salmon' | 'honey' | 'bearMeat'
 export type ConversionType = 'energy' | 'fat'
@@ -23,7 +23,7 @@ export interface GameResources {
 
 export interface CoreGamePiece {
   id: string
-  playerId: string | number
+  playerId: string
   spaceId: string
   type: 'bear' | 'cub'
   health?: number
@@ -33,13 +33,18 @@ export interface CoreGamePiece {
   emergencyEnergy: number
   isHibernating?: boolean
   movedThisTurn?: boolean  // Track if piece moved this turn for harvest rules
+  harvestedThisTurn?: boolean  // Track if piece harvested this turn (one harvest per turn)
 }
 
 export interface CoreGameSpace {
   id: string
   ring: number
   position: number
-  angle: number
+  centerAngle: number
+  edgeAngles?: {
+    left: number
+    right: number
+  }
   quadrant: QuadrantType
   subArea?: SubAreaType
   piece: CoreGamePiece | null
@@ -72,6 +77,8 @@ export interface CorePlayer {
     maxCubs: number
   }
   score: number
+  barrenSpaces: string[]  // Spaces that are barren (recently harvested) for this player
+  harvestedThisTurn: string[]  // Spaces harvested during current turn (temporary tracking)
 }
 
 /**

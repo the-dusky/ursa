@@ -4,9 +4,7 @@
  * Centralized export point for all engine components
  */
 
-export { GameEngine } from './GameEngine'
-export { GAME_CONFIG, GameConfigHelpers } from './GameConfig'
-export type { GameConfig } from './GameConfig'
+// GameEngine and GameConfig removed - logic moved to ActionDispatcher
 export { BoardFactory } from './BoardFactory'
 export type { Board as EngineBoard, BoardConfig, BoardSpace } from './BoardFactory'
 

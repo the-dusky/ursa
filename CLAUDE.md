@@ -2,12 +2,38 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Context
+## Project Overview
 
-Always read the CHANGELOG.md for context
-Always look at tasks/todo.md for next steps
+This is a **multiplayer board game application** ("Seasonal Board Game") built with Next.js 15 and real-time collaboration using Y.js WebSockets. The project implements a **clean state machine architecture** with strict separation of concerns to eliminate the complexity and race conditions of the previous system.
 
-### Task Management Workflow
+## Architecture
+
+**CRITICAL:** `/Users/the_dusky/code/sandox/bears2/ARCHITECTURE.md` is the complete architectural bible. All new features MUST follow this clean architecture. Do not add code to old stores or create mixed-concern components.
+
+### Core Architecture Principles
+
+1. **Single Source of Truth**: `CoreGameState` is the ONLY state format used throughout the application
+2. **Separation of Concerns**: Clear boundaries between game logic, multiplayer sync, and UI state
+3. **Clean Data Flow**: UI → ActionDispatcher → GameEngine → StateManager → Store Updates
+4. **Type Safety**: All actions are type-safe with validation, no `any` types
+
+### Key Architecture Components
+
+**State Layer (`/src/state/`)**:
+- `CoreGameState.ts` - Single source of truth for all game data
+- `StateManager.ts` - Central orchestrator for all state changes  
+- `ActionDispatcher.ts` - Single entry point for all game actions
+- `GameStateStore.ts` - React store for core game data ONLY
+- `MultiplayerStore.ts` - React store for Y.js sync and room management ONLY
+- `StateCoordinator.ts` - Coordinates between the two stores
+
+**Engine Layer (`/src/engine/`)**:
+- Game logic processing and validation
+- Board generation and game mechanics
+- Type definitions for core game concepts
+
+## Task Management Workflow
+
 When given a task, analyze and respond with:
 1. "Here's the prompt I would execute:"
 2. [Complete optimized prompt]
@@ -17,8 +43,36 @@ When given a task, analyze and respond with:
 **MCP Server Usage:**
 - Playwright MCP for UI changes and testing
 
+## Development Commands
 
-**development server
+### Core Development
+- `pnpm dev` - Next.js development server only (Turbopack enabled, port 8347)
+- `pnpm dev:local` - Start both WebSocket server and Next.js dev server (recommended)
+- `pnpm dev:remote` - Next.js dev server connecting to remote Y.js server
+- `pnpm server` - Y.js WebSocket server only (Docker)
+- `pnpm build` - Build Next.js application
+- `pnpm lint` - Run ESLint
+
+### Testing
+- `pnpm test` - Run Vitest in watch mode
+- `pnpm test:run` - Run tests once
+- `pnpm test:ui` - Run tests with UI
+- `pnpm test:coverage` - Run tests with coverage report
+- `pnpm test:watch` - Run tests in watch mode
+
+### Quality Assurance Workflow
+Always run in this order before committing:
+1. `pnpm lint` - Must pass
+2. `pnpm tsc` - TypeScript compilation must be error-free (from frontend directory)
+3. `pnpm build` - Build must succeed
+
+### Docker & Infrastructure
+- `pnpm server:build` - Build Y.js WebSocket server
+- `pnpm server:dev` - Start server in development mode
+- `pnpm server:logs` - View server logs
+- `pnpm server:stop` - Stop all Docker services
+
+## UI Testing with Playwright MCP
 
 ### Starting Local Development with Logging
 To properly monitor development and debug issues:
@@ -51,7 +105,7 @@ With the dev server running, use Playwright MCP to:
 ### Example Workflow
 ```bash
 # Start logged development
-pnpm dev:local > logs/shopify_dev.log 2>&1 &
+pnpm dev:local > logs/dev.log 2>&1 &
 
 # Make code changes (auto-sync)
 # Use Playwright to test changes
@@ -62,164 +116,164 @@ cat logs/dev.log
 pkill -f "pnpm dev:local"
 ```
 
-##Rules
+## Rules
 
-- use pnpm for package management
-  - do not use npm
-- use `docker compose` not `docker-compose` (modern Docker command)
-  
-## Tasks
+- **Package Management**: Use `pnpm` only, never `npm`
+- **Docker**: Use `docker compose` (modern command), not `docker-compose`
+- **Architecture**: Follow `/ARCHITECTURE.md` patterns strictly
+- **State Management**: Always use `useGameState()` hook for main component state
+- **Actions**: All game actions MUST go through ActionDispatcher
+- **Types**: Strict TypeScript, no `any` types allowed
 
-Use the tasks/todo.md file as the source of truth. Work on it in order, asking if we are ready to move on.
+## Current Implementation Status
 
-## Git
+**✅ Completed Architecture**:
+- Clean state machine with separation of concerns
+- Type-safe action system with validation
+- Multiplayer synchronization using Y.js CRDTs
+- Comprehensive test suite (80+ tests)
+- Race condition fixes implemented
 
-Commit after finishing task sections
-- pnpm lint
-- if linting passes then
-  - pnpm tsc
-  - if pnpm tsc is free of errors then
-    - pnpm build
+**🚧 Current State**:
+- Main page shows architecture status placeholder
+- Game components need integration with new state system
+- WebSocket server configured but may need updates
+- Tests are mostly passing with new architecture
 
-Once we build is succesful
-- update the changelog and cross of todos
-- Then `git add` . and `git commit` and push
+**🔜 Next Steps**:
+- Integrate game components with new state system
+- Migrate remaining components from old architecture
+- Implement missing game UI features
 
-## Development Commands
+## Known Patterns & Critical Fixes
 
-### Core Development
-- `pnpm dev:local` - Start both WebSocket server and Next.js dev server 
-- `pnpm dev:remote` - Start Next.js dev server and connect to remote y.js
-  (recommended for full development)
-- `pnpm dev` - Next.js development server only (Turbopack enabled)
-- `pnpm server` - Y.js WebSocket server only
-- `pnpm build` - Build Next.js application
-- `pnpm lint` - Run ESLint
+### Adjacency Calculation (IMMUTABLE - DO NOT MODIFY)
+**Problem**: Edge angle overlap detection for board adjacencies
+**Solution**: Isolated `AdjacencyCalculator.ts` with comprehensive tests
+**Files**: `src/engine/AdjacencyCalculator.ts`, `src/test/AdjacencyCalculator.test.ts`
+**Protection**: Verification tests run on every board generation, 8 regression tests
+**Critical Case**: R1-7 (right: 4.555309) and R0-NORTH (left: 4.556582) must NOT be adjacent
 
-### Testing & Quality
-- `pnpm lint` - ESLint for code quality
+## Known Patterns & Critical Fixes
 
-## Project Architecture
+### Y.js Race Condition Fix (Implemented)
+**Problem**: Multiplayer state updates causing data corruption
+**Solution**: Lock pattern with `isUpdatingFromYjs` flag, nullish coalescing for boolean sync, debounced updates
+**Files**: `apps/frontend/src/store/gameStore.ts` (legacy), state system (new)
 
-This is a **multiplayer board game application** ("Seasonal Board Game") built with Next.js 15 and real-time collaboration using Y.js WebSockets.
+### Boolean State Synchronization Fix (Implemented)  
+**Problem**: `false` values being overridden in multiplayer sync
+**Solution**: Use `??` instead of `||` for boolean fields
+**Prevention**: Always use nullish coalescing for boolean/numeric multiplayer state
 
-### Key Components Architecture
+### Timestamp-Based Conflict Resolution (Implemented)
+**Problem**: Stale state updates overwriting fresh data  
+**Solution**: StateManager rejects updates with older timestamps
+**Files**: `src/state/StateManager.ts`
 
-**Frontend (Next.js App)**
-- Next.js 15 with App Router and React 19
-- Zustand state management integrated with Y.js for real-time multiplayer
-- SVG-based circular game board with 5 concentric rings and 4 quadrants
-- Tailwind CSS v4 with custom game-themed color palette
-- Shadcn/ui component system (configured but components not yet populated)
+## Usage Patterns
 
-**Backend (Separate Server)**
-- Custom Y.js WebSocket server in `/server/` directory
-- Handles real-time multiplayer synchronization using CRDTs
-- Currently empty (`server/y-websocket-server.js` needs implementation)
+### ✅ CORRECT: Adding New Features
+```typescript
+// 1. Define action in ActionDispatcher.ts
+export interface NewGameAction extends GameAction {
+  type: 'NEW_ACTION'
+  // ... action properties
+}
 
-### Game-Specific Architecture
+// 2. Add to AnyGameAction union
+export type AnyGameAction = MovePieceAction | NewGameAction | ...
 
-**Board Structure**
-- Circular board with 5 rings and 4 quadrants (Mountains, Pastures, Forests, Riverlands)
-- SVG rendering with polar coordinates for space positioning
-- Mountain quadrant has special Cave vs Hunting Ground mechanics
-- Seasonal resource production system with bear survival mechanics
+// 3. Register handler and implement logic
+dispatcher.registerHandler('NEW_ACTION', (state, action) => {
+  // Process action, return new state
+})
 
-**State Management** (`/src/store/gameStore.ts`)
-- Zustand store with Y.js WebSocket provider integration
-- Conflict-free multiplayer state using Y.js CRDTs
-- Game state includes player territories, resources, and seasonal mechanics
+// 4. Use in components
+const { actions } = useGameState()
+actions.newAction(...)
+```
 
-**Game Components** (`/src/components/game/`)
-- `GameBoard.tsx` - Main SVG board rendering
-- `GameControls.tsx`, `PlayerInfo.tsx`, `ResourcePanel.tsx` - UI controls
-- `MultiplayerControls.tsx` - Real-time collaboration features
-- Components are built but not integrated into main page yet
+### ✅ CORRECT: Component State Access
+```typescript
+function GameComponent() {
+  const {
+    // Game state
+    players, currentPlayer, board, gamePhase,
+    // Multiplayer state  
+    multiplayer: { isConnected, roomId },
+    // Actions
+    actions: { movePiece, harvest },
+    // System status
+    isMultiplayer, isCoordinated
+  } = useGameState()
+}
+```
 
-### Current Implementation Status
+### ❌ NEVER Do These Things
+- Modify state directly
+- Create format conversions between state types
+- Mix concerns in stores (game logic in MultiplayerStore, etc.)
+- Add UI state to game stores
+- Skip action validation
+- Use old `gameStore.ts` for new features
+- Access StateManager directly from components
 
-**Completed:**
-- All dependencies installed and configured
-- Game components built with sophisticated mechanics
-- Tailwind configuration with custom game colors and animations
-- Zustand + Y.js state management architecture
+## File Structure
 
-**Needs Implementation:**
-- Main page (`/src/app/page.tsx`) still shows default Next.js starter
-- WebSocket server (`/server/y-websocket-server.js`) is empty
-- Shadcn/ui components not yet added to `/src/components/ui/`
+```
+/src/state/           # New clean architecture (USE THIS)
+├── index.ts          # Main export and useGameState()
+├── CoreGameState.ts  # Single source of truth types
+├── StateManager.ts   # Central state orchestrator
+├── ActionDispatcher.ts # Action processing
+├── GameStateStore.ts # Core game data store
+├── MultiplayerStore.ts # Multiplayer sync store
+└── StateCoordinator.ts # Store coordination
 
-### Configuration
+/src/store/           # Legacy stores
+└── gameStore.old.ts  # DEPRECATED - do not use
 
-**Tailwind CSS**: Custom game-themed colors (Mountain #8B7355, Pasture #90EE90, Forest #228B22, Riverland #4682B4) with seasonal animations
+/src/engine/          # Game logic layer
+/src/components/      # React components
+/src/test/           # Test utilities and regression tests
+```
 
-**Shadcn/ui**: Configured with "new-york" style, TypeScript enabled, path aliases set up
+## Testing Architecture
 
-**Y.js Integration**: WebSocket provider configured for real-time multiplayer at `ws://localhost:1234`
+The project has comprehensive test coverage for the new architecture:
+- **Unit Tests**: Individual component testing (StateManager, ActionDispatcher, etc.)
+- **Integration Tests**: Store coordination and multiplayer sync
+- **Regression Tests**: Prevent known bugs from reappearing
+- **Mock System**: Y.js and WebSocket mocking for reliable testing
+
+### Running Specific Tests
+```bash
+# Run single test file
+pnpm test StateManager.test.ts
+
+# Run tests matching pattern
+pnpm test --grep "multiplayer"
+
+# Run with debugging
+pnpm test --reporter=verbose
+```
 
 ## Development Notes
 
-- Use `npm run dev:full` for full development experience with both servers
-- Main game logic is in game store and components but needs integration
-- Project uses both npm (main) and has pnpm-lock.yaml present
-- WebSocket server needs implementation before multiplayer features work
+- **Port**: Development server runs on `http://localhost:8347`
+- **WebSocket**: Y.js server at `ws://localhost:1234`
+- **State Format**: Single `CoreGameState` interface used everywhere
+- **Multiplayer**: Real-time collaboration with conflict resolution
+- **Board**: SVG-based circular board with 5 rings and 4 quadrants
+- **Game Theme**: Seasonal bear survival with resource management
 
-## Known Patterns & Solutions
+## Migration Status
 
-### Y.js Race Condition Fix (Implemented)
+- **Phase 1**: ✅ New architecture implemented
+- **Phase 2**: ✅ TypeScript issues resolved, tests passing
+- **Phase 3**: 🚧 Component migration to `useGameState()`  
+- **Phase 4**: 🔜 Remove legacy stores
+- **Phase 5**: 🔜 Add new features using clean architecture
 
-**Problem**: When Client A updates Yjs, Client B receives the update and triggers Zustand set(), which fires store subscription and calls syncToYjs(), potentially overwriting A's fresh data with B's stale copy.
-
-**Solution Pattern** (implemented in `gameStore.ts:552-578`):
-1. **Lock Pattern**: Use `isUpdatingFromYjs` flag to prevent recursive updates
-   - Set `isUpdatingFromYjs = true` BEFORE calling `set()` in observer
-   - Check flag in `syncToYjs` to avoid sending updates while receiving them
-2. **Shallow Equality Check**: Compare current vs previous state using JSON.stringify
-3. **Debounced Sync**: Use setTimeout(50ms) to batch rapid local changes
-4. **Debug Logging**: Track update sources with console.log
-
-**Files Modified**: 
-- `apps/frontend/src/store/gameStore.ts` (lines 145-166, 241-284, 552-578, 1039-1044)
-
-**Prevention**: Always implement this pattern when adding new Yjs synchronization to prevent data corruption in multiplayer scenarios.
-
-### Y.js Boolean State Synchronization Fix (Implemented)
-
-**Problem**: Player 2 was not being asked for energy tax on their first turn because boolean `false` values were being incorrectly overridden by local fallback values in multiplayer synchronization.
-
-**Root Cause**: Using logical OR (`||`) instead of nullish coalescing (`??`) for boolean state fields:
-```typescript
-// WRONG - false values fallback to local state
-energyTaxPaid: yjsState.energyTaxPaid || get().energyTaxPaid
-
-// CORRECT - only null/undefined values fallback  
-energyTaxPaid: yjsState.energyTaxPaid ?? get().energyTaxPaid
-```
-
-**Solution**: Use nullish coalescing (`??`) for boolean and numeric fields in Yjs observer (line 594).
-
-**Files Modified**: 
-- `apps/frontend/src/store/gameStore.ts` (line 594)
-
-**Prevention**: Always use `??` instead of `||` for boolean and numeric state synchronization in multiplayer games.
-
-### Multiplayer UI Update Race Condition Fix (Implemented)
-
-**Problem**: Local UI changes (like energy tax payment) were not immediately reflecting on the current player's screen but were visible on other players' screens. UI updates would only appear after a phase change or other state update.
-
-**Root Cause**: Double synchronization to Yjs was creating race conditions:
-1. Action methods manually synced to Yjs immediately
-2. Store subscription also synced to Yjs with 50ms debounce  
-3. Remote Yjs updates could override local changes during this timing window
-
-**Solution**: Remove all manual `gameStateMap.set()` calls from action methods and rely solely on the store subscription for Yjs synchronization.
-
-**Files Modified**:
-- `apps/frontend/src/store/gameStore.ts` (lines 786-800, 816-825, 835-842)
-
-**Methods Fixed**:
-- `updateFromEngineState` - removed manual energy tax sync
-- `updateBoardRotations` - removed manual board/player sync  
-- `updateDiceState` - removed manual dice state sync
-
-**Prevention**: Never manually sync to Yjs in action methods - let the store subscription handle all Yjs synchronization to avoid race conditions.
+Remember: This architecture prevents the complexity and bugs of the previous system. Following these patterns ensures maintainable, testable, and extensible code.

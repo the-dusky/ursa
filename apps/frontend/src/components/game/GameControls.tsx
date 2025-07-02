@@ -1,47 +1,56 @@
 'use client'
 
-import { useGameStore } from '@/store/gameStore'
-import { useSelectionState, useModalState } from '@/store/uiStore'
-import { useUIInteractions } from '@/store/actions'
+import { useState } from 'react'
+import { useStateCoordinator, useCoordinatedGameActions } from '@/state/StateCoordinator'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export function GameControls() {
-  // Game state
-  const { 
-    resetGame, 
-    initializeGame,
-    currentPlayerIndex, 
-    players, 
-    season,
-    gamePhase,
-    board
-  } = useGameStore()
-  
-  // UI state
-  const { selectedSpaceId, clearSelections } = useSelectionState()
-  const { toggleRules } = useModalState()
-  
-  // UI actions
-  const { onAdvanceTurn } = useUIInteractions()
+  const { gameState } = useStateCoordinator()
+  const gameActions = useCoordinatedGameActions()
+  const [selectedSpaceId, setSelectedSpaceId] = useState<string | null>(null)
 
-  const currentPlayer = players[currentPlayerIndex]
-  const selectedSpace = selectedSpaceId ? board.spaces[selectedSpaceId] : null
+  const currentPlayer = gameState.players[gameState.currentPlayerIndex]
+  const selectedSpace = selectedSpaceId ? gameState.board.spaces[selectedSpaceId] : null
   const selectedPiece = selectedSpace?.piece
   const canMoveSelectedPiece = selectedPiece && selectedPiece.playerId === currentPlayer?.id
-  
 
-  // Simplified - these actions are now handled through the new architecture
+  const clearSelections = () => {
+    setSelectedSpaceId(null)
+  }
+
+  const handleAdvanceTurn = async () => {
+    try {
+      await gameActions.advanceTurn()
+    } catch (error) {
+      console.error('Failed to advance turn:', error)
+    }
+  }
+
+  const handleResetGame = async () => {
+    if (confirm('Are you sure you want to reset the game?')) {
+      try {
+        await gameActions.initializeGame(gameState.players.length)
+      } catch (error) {
+        console.error('Failed to reset game:', error)
+      }
+    }
+  }
+
   const handleHighlightMoves = () => {
-    console.log("highlight moves - handled by UI actions")
+    console.log("highlight moves - to be implemented with new architecture")
   }
 
   const handlePlaceBear = () => {
-    console.log("place bear - not implemented in new architecture yet")
+    console.log("place bear - to be implemented with new architecture")
   }
 
   const handlePlaceCub = () => {
-    console.log("place cub - not implemented in new architecture yet")
+    console.log("place cub - to be implemented with new architecture")
+  }
+
+  const toggleRules = () => {
+    console.log("toggle rules - to be implemented")
   }
 
   return (
@@ -52,7 +61,8 @@ export function GameControls() {
       <CardContent className="space-y-4">
         <div className="text-sm">
           <p><strong>Current Player:</strong> {currentPlayer?.name}</p>
-          <p><strong>Season:</strong> {season}</p>
+          <p><strong>Season:</strong> {gameState.season}</p>
+          <p><strong>Phase:</strong> {gameState.gamePhase}</p>
           {selectedSpace && (
             <p><strong>Selected:</strong> {selectedSpace.quadrant} (Ring {selectedSpace.ring})</p>
           )}
@@ -67,8 +77,6 @@ export function GameControls() {
                 <div className="text-sm space-y-1">
                   <p>Type: {selectedPiece.type === 'bear' ? '🐻 Adult Bear' : '🐼 Cub'}</p>
                   <p>Owner: Player {selectedPiece.playerId}</p>
-                  <p>Location: {selectedSpace.quadrant}</p>
-                  {selectedSpace.subArea && <p>Area: {selectedSpace.subArea}</p>}
                 </div>
                 
                 {canMoveSelectedPiece && (
@@ -105,23 +113,23 @@ export function GameControls() {
                   <p>Ring: {selectedSpace.ring}</p>
                 </div>
                 
-                {currentPlayer && gamePhase === 'playing' && (
+                {currentPlayer && gameState.gamePhase === 'playing' && (
                   <div className="flex gap-2 mt-3">
                     <Button 
                       onClick={handlePlaceBear} 
                       variant="outline" 
                       size="sm"
-                      disabled={currentPlayer.pieceCount.bears >= currentPlayer.pieceCount.maxBears}
+                      disabled={currentPlayer.pieceCount.maxBears <= currentPlayer.pieces.filter(p => p.type === 'bear').length}
                     >
-                      🐻 Place Bear ({currentPlayer.pieceCount.bears}/{currentPlayer.pieceCount.maxBears})
+                      🐻 Place Bear
                     </Button>
                     <Button 
                       onClick={handlePlaceCub} 
                       variant="outline" 
                       size="sm"
-                      disabled={currentPlayer.pieceCount.cubs >= currentPlayer.pieceCount.maxCubs}
+                      disabled={currentPlayer.pieceCount.maxCubs <= currentPlayer.pieces.filter(p => p.type === 'cub').length}
                     >
-                      🐼 Place Cub ({currentPlayer.pieceCount.cubs}/{currentPlayer.pieceCount.maxCubs})
+                      🐼 Place Cub
                     </Button>
                   </div>
                 )}
@@ -131,14 +139,14 @@ export function GameControls() {
         )}
         
         <div className="flex flex-wrap gap-2">
-          {gamePhase === 'setup' && (
-            <Button onClick={initializeGame} variant="default">
+          {gameState.gamePhase === 'setup' && (
+            <Button onClick={() => gameActions.initializeGame(2)} variant="default">
               Start Game
             </Button>
           )}
-          {gamePhase === 'playing' && (
+          {gameState.gamePhase === 'playing' && (
             <>
-              <Button onClick={onAdvanceTurn} variant="outline">
+              <Button onClick={handleAdvanceTurn} variant="outline">
                 Next Turn
               </Button>
             </>
@@ -149,7 +157,7 @@ export function GameControls() {
           <Button onClick={toggleRules} variant="outline">
             Rules
           </Button>
-          <Button onClick={resetGame} variant="destructive">
+          <Button onClick={handleResetGame} variant="destructive">
             New Game
           </Button>
         </div>

@@ -1,70 +1,57 @@
+/**
+ * GameSpace Component - Simplified for new architecture
+ */
+
 'use client'
 
-import { GameSpace as GameSpaceType } from '@/store/gameStore'
-import { useSelectionState } from '@/store/uiStore'
-import { useUIInteractions } from '@/store/actions'
+import { CoreGameState } from '@/state/CoreGameState'
 import { cn } from '@/lib/utils'
 import { motion } from 'framer-motion'
 
 interface GameSpaceProps {
-  space: GameSpaceType
+  spaceId: string
   x: number
   y: number
   size: number
+  gameState: CoreGameState
+  selectedSpaceId: string | null
+  onSpaceClick: (spaceId: string) => void
 }
 
-export function GameSpace({ space, x, y, size }: GameSpaceProps) {
-  const { selectedSpaceId, highlightedSpaces } = useSelectionState()
-  const { onSpaceClick } = useUIInteractions()
-
+export function GameSpace({ 
+  spaceId, 
+  x, 
+  y, 
+  size, 
+  gameState, 
+  selectedSpaceId, 
+  onSpaceClick 
+}: GameSpaceProps) {
   const handleClick = () => {
-    console.log("clicked space " + space.id)
-    onSpaceClick(space.id)
+    console.log("clicked space " + spaceId)
+    onSpaceClick(spaceId)
   }
+
+  // Find piece on this space
+  const piece = gameState.players.flatMap(p => p.pieces).find(p => p.spaceId === spaceId)
 
   const getSpaceColor = () => {
-    if (selectedSpaceId === space.id) {
-      return 'bg-selection border-yellow-400'
-    }
-    
-    if (highlightedSpaces.includes(space.id)) {
-      return 'bg-green-500/70 border-green-400'
+    if (selectedSpaceId === spaceId) {
+      return 'bg-yellow-400/70 border-yellow-400'
     }
 
-    switch (space.quadrant) {
-      case 'Mountains':
-        return 'bg-slate-500 border-slate-600' // All mountains are gray
-      case 'Pastures':
-        return 'bg-pasture border-green-600'
-      case 'Forests':
-        return 'bg-forest border-green-800'
-      case 'Riverlands':
-        return 'bg-riverland border-blue-600'
-      default:
-        return 'bg-slate-600 border-slate-500'
-    }
+    // Default space colors - could be enhanced with actual space data
+    return 'bg-slate-400 border-slate-500'
   }
 
-  const getPieceColor = () => {
-    if (!space.piece) return ''
-    
-    if (space.piece.type === 'bear') {
-      return 'bg-amber-700 border-amber-600'
-    }
+  const getPieceColor = (piece: any) => {
+    if (!piece) return ''
     
     // Player pieces
-    const player = space.piece.playerId
-    if (player === 1) return 'bg-red-500 border-red-400'
-    if (player === 2) return 'bg-blue-500 border-blue-400'
+    const player = piece.playerId
+    if (player === 'player-1') return 'bg-red-500 border-red-400'
+    if (player === 'player-2') return 'bg-blue-500 border-blue-400'
     return 'bg-purple-500 border-purple-400'
-  }
-
-  const getIndicator = () => {
-    if (space.quadrant === 'Mountains') return '⛰️'
-    if (space.quadrant === 'Pastures') return '🌾'
-    if (space.quadrant === 'Forests') return space.hasHoney ? '🍯' : '🌲'
-    if (space.quadrant === 'Riverlands') return '🐟'
-    return ''
   }
 
   return (
@@ -88,32 +75,25 @@ export function GameSpace({ space, x, y, size }: GameSpaceProps) {
           getSpaceColor()
         )}
       >
-        {/* Resource/Area Indicator */}
-        {!space.piece && getIndicator() && (
-          <div className="absolute inset-0 flex items-center justify-center text-xs opacity-70">
-            {getIndicator()}
-          </div>
-        )}
-
         {/* Game Piece */}
-        {space.piece && (
+        {piece && (
           <motion.div
             className={cn(
               'absolute inset-1 rounded-full border-2 flex items-center justify-center',
               'shadow-lg text-white font-bold text-xs',
-              getPieceColor()
+              getPieceColor(piece)
             )}
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
             exit={{ scale: 0 }}
             transition={{ type: 'spring', stiffness: 300 }}
           >
-            {space.piece.type === 'bear' ? '🐻' : space.piece.playerId}
+            {piece.type === 'bear' ? '🐻' : piece.type === 'cub' ? '🐻‍❄️' : '●'}
           </motion.div>
         )}
 
         {/* Selection Ring */}
-        {selectedSpaceId === space.id && (
+        {selectedSpaceId === spaceId && (
           <motion.div
             className="absolute -inset-1 rounded-full border-2 border-yellow-400"
             initial={{ scale: 0.8, opacity: 0 }}
@@ -121,18 +101,7 @@ export function GameSpace({ space, x, y, size }: GameSpaceProps) {
             transition={{ duration: 0.2 }}
           />
         )}
-
-        {/* Highlight Ring for Valid Moves */}
-        {highlightedSpaces.includes(space.id) && (
-          <motion.div
-            className="absolute -inset-1 rounded-full border-2 border-green-400 animate-pulse"
-            initial={{ scale: 0.8, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            transition={{ duration: 0.2 }}
-          />
-        )}
       </div>
-
     </motion.div>
   )
 }

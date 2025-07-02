@@ -9,12 +9,17 @@
  */
 
 import type { QuadrantType, SubAreaType } from './types'
+import { areSpacesAdjacent, VERIFICATION_TESTS } from './AdjacencyCalculator'
 
 export interface BoardSpace {
   id: string
   ring: number // 0 for bridge spaces
   position: number
-  angle: number
+  centerAngle: number
+  edgeAngles?: {
+    left: number
+    right: number
+  }
   quadrant: QuadrantType
   subArea?: SubAreaType
   canProduce: boolean
@@ -67,12 +72,25 @@ export class BoardFactory {
       for (let position = 1; position <= spaceCount; position++) {
         // Apply ring rotation (handle negative rotations)
         const rotation = rotations[ring - 1] || 0
+        
         const rotatedBiomePosition = ((position - 1 - rotation + spaceCount) % spaceCount) + 1
         const rotatedBiomeIndex = Math.floor((rotatedBiomePosition - 1) / spacesPerBiome)
         const finalQuadrant = config.biomes[rotatedBiomeIndex]
         
-        // Calculate angle for this position (FIXED - does not change with rotation)
-        const angle = ((position - 0.5) / spaceCount) * 2 * Math.PI + 3*Math.PI/4
+        // Debug: Log rotation for first position of each ring
+        if (position === 1) {
+          console.log(`Ring ${ring}: rotation ${rotation} spaces (from rotations[${ring - 1}])`)
+          console.log(`  Example: Position 1 was ${config.biomes[0]}, now ${finalQuadrant}`)
+        }
+        
+        // Calculate angle for this position (visual position stays fixed, only biomes rotate)
+        const baseAngle = ((position - 0.5) / spaceCount) * 2 * Math.PI + 3*Math.PI/4
+        const angle = baseAngle
+        
+        // Calculate corner angles for this space (sector/trapezoid)
+        const anglePerSpace = (2 * Math.PI) / spaceCount
+        const leftAngle = angle - anglePerSpace / 2
+        const rightAngle = angle + anglePerSpace / 2
         
         const spaceId = `R${ring}-${position}`
         
@@ -80,7 +98,11 @@ export class BoardFactory {
           id: spaceId,
           ring,
           position,
-          angle,
+          centerAngle: angle,
+          edgeAngles: {
+            left: leftAngle,
+            right: rightAngle
+          },
           quadrant: finalQuadrant,
           subArea: finalQuadrant === 'Mountains' ? BoardFactory.getMountainSubArea(ring) : undefined,
           canProduce: finalQuadrant !== 'Mountains',
@@ -112,7 +134,7 @@ export class BoardFactory {
         id: sampleSpace.id,
         ring: sampleSpace.ring,
         position: sampleSpace.position,
-        angle: `${(sampleSpace.angle * 180 / Math.PI).toFixed(1)}°`,
+        centerAngle: `${(sampleSpace.centerAngle * 180 / Math.PI).toFixed(1)}°`,
         quadrant: sampleSpace.quadrant,
         adjacentSpaces: sampleSpace.adjacentSpaces
       })
@@ -121,7 +143,7 @@ export class BoardFactory {
       sampleSpace.adjacentSpaces.forEach(adjId => {
         const adjSpace = spaces[adjId] || bridges[adjId]
         if (adjSpace) {
-          console.log(`  -> ${adjId}: ${adjSpace.quadrant} at ${(adjSpace.angle * 180 / Math.PI).toFixed(1)}°`)
+          console.log(`  -> ${adjId}: ${adjSpace.quadrant} at ${(adjSpace.centerAngle * 180 / Math.PI).toFixed(1)}°`)
         }
       })
     }
@@ -179,41 +201,59 @@ export class BoardFactory {
    * Create bridge system
    */
   private static createBridgeSystem(bridges: { [bridgeId: string]: BoardSpace }, tunnelMode: boolean) {
-    // Center bridge space
+    // Center bridge space - tunnel is horizontal rectangle, so calculate edge angles
+    const tunnelWidth = 40 // From GameBoard.tsx
+    const centerX = 400
+    const centerY = 400
+    
+    // Calculate angular width of the tunnel at Ring 1 radius (60px)
+    const ring1Radius = 60
+    const tunnelAngularHalfWidth = Math.atan(tunnelWidth / 2 / ring1Radius)
+    const boardRotation = 3 * Math.PI / 4 // Same rotation as board spaces
+    
     if (tunnelMode) {
       // Tunnel mode: center only connects East-West
-      bridges['BRIDGE-CENTER'] = {
-        id: 'BRIDGE-CENTER',
+      bridges['R0-CENTER'] = {
+        id: 'R0-CENTER',
         ring: 0,
         position: 0,
-        angle: 0,
+        centerAngle: boardRotation,  // 135° to match ring coordinate system
+        edgeAngles: {
+          left: -tunnelAngularHalfWidth + boardRotation,  // Left edge of horizontal tunnel
+          right: tunnelAngularHalfWidth + boardRotation   // Right edge of horizontal tunnel
+        },
         quadrant: 'Bridge',
         subArea: 'Center',
         canProduce: false,
         hasHoney: false,
-        adjacentSpaces: ['BRIDGE-EAST', 'BRIDGE-WEST']
+        adjacentSpaces: ['R0-EAST', 'R0-WEST']
       }
     } else {
-      // Full cross mode: center connects to all arms
-      bridges['BRIDGE-CENTER'] = {
-        id: 'BRIDGE-CENTER',
+      // Full cross mode: center connects to all arms - covers full 360°
+      bridges['R0-CENTER'] = {
+        id: 'R0-CENTER',
         ring: 0,
         position: 0,
-        angle: 0,
+        centerAngle: boardRotation,  // 135° to match ring coordinate system  
+        edgeAngles: {
+          left: -Math.PI + boardRotation,  // Full circle
+          right: Math.PI + boardRotation
+        },
         quadrant: 'Bridge',
         subArea: 'Center',
         canProduce: false,
         hasHoney: false,
-        adjacentSpaces: ['BRIDGE-NORTH', 'BRIDGE-EAST', 'BRIDGE-SOUTH', 'BRIDGE-WEST']
+        adjacentSpaces: ['R0-NORTH', 'R0-EAST', 'R0-SOUTH', 'R0-WEST']
       }
     }
     
-    // Bridge arms
+    // Bridge arms - align with ring space coordinate system
+    // R0-NORTH should align with R1-8 (270°), etc.
     const bridgeArms = [
-      { id: 'BRIDGE-NORTH', subArea: 'North', angle: -Math.PI / 2 },
-      { id: 'BRIDGE-EAST', subArea: 'East', angle: 0 },
-      { id: 'BRIDGE-SOUTH', subArea: 'South', angle: Math.PI / 2 },
-      { id: 'BRIDGE-WEST', subArea: 'West', angle: Math.PI }
+      { id: 'R0-NORTH', subArea: 'North', angle: 3 * Math.PI / 2 },  // 270° to match R1-8
+      { id: 'R0-EAST', subArea: 'East', angle: 0 },                  // 0° to align with "right" spaces
+      { id: 'R0-SOUTH', subArea: 'South', angle: Math.PI / 2 },      // 90° to align with "bottom" spaces  
+      { id: 'R0-WEST', subArea: 'West', angle: Math.PI }             // 180° to align with "left" spaces
     ]
     
     bridgeArms.forEach((arm, index) => {
@@ -222,23 +262,37 @@ export class BoardFactory {
       
       if (tunnelMode) {
         if (arm.subArea === 'North') {
-          adjacentSpaces.push('BRIDGE-SOUTH') // North connects directly to South (overland)
+          adjacentSpaces.push('R0-SOUTH') // North connects directly to South (overland)
         } else if (arm.subArea === 'South') {
-          adjacentSpaces.push('BRIDGE-NORTH') // South connects directly to North (overland)
+          adjacentSpaces.push('R0-NORTH') // South connects directly to North (overland)
         } else if (arm.subArea === 'East') {
-          adjacentSpaces.push('BRIDGE-CENTER') // East connects to tunnel
+          adjacentSpaces.push('R0-CENTER') // East connects to tunnel
         } else if (arm.subArea === 'West') {
-          adjacentSpaces.push('BRIDGE-CENTER') // West connects to tunnel
+          adjacentSpaces.push('R0-CENTER') // West connects to tunnel
         }
       } else {
-        adjacentSpaces.push('BRIDGE-CENTER') // All arms connect to center
+        adjacentSpaces.push('R0-CENTER') // All arms connect to center
       }
+      
+      // Calculate edge angles for rectangular bridge arms
+      // Bridge arms extend from center (radius 20) to Ring 1 (radius 60)
+      const armLength = 40 // 60 - 20
+      const ring1SpaceCount = 20
+      const ring1SpaceWidthAtInnerEdge = (2 * Math.PI * ring1Radius) / ring1SpaceCount
+      const armWidth = ring1SpaceWidthAtInnerEdge // ~18.85px
+      
+      // Calculate angular width based on arm width at the connection point to Ring 1
+      const armAngularHalfWidth = Math.atan(armWidth / 2 / ring1Radius)
       
       bridges[arm.id] = {
         id: arm.id,
         ring: 0,
         position: index + 1,
-        angle: arm.angle,
+        centerAngle: arm.angle,
+        edgeAngles: {
+          left: arm.angle - armAngularHalfWidth,
+          right: arm.angle + armAngularHalfWidth
+        },
         quadrant: 'Bridge',
         subArea: arm.subArea as SubAreaType,
         canProduce: false,
@@ -249,90 +303,60 @@ export class BoardFactory {
   }
 
   /**
-   * Set up adjacencies using angular-based logic that respects rotations
+   * Set up adjacencies using the ISOLATED AdjacencyCalculator
+   * DO NOT MODIFY - Uses immutable adjacency logic
    */
   private static setupAdjacencies(
     spaces: { [spaceId: string]: BoardSpace },
     rings: { [ring: number]: BoardRing },
     bridges: { [bridgeId: string]: BoardSpace }
   ) {
+    // RUN VERIFICATION TESTS FIRST - Fail fast if logic is broken
+    VERIFICATION_TESTS.runAll()
+    
     // Clear any existing adjacencies
     Object.values(spaces).forEach(space => space.adjacentSpaces = [])
     
-    // Set up ring space adjacencies
+    // Set up ring space adjacencies using IMMUTABLE calculator
     Object.values(spaces).forEach(space => {
       const adjacentSpaces: string[] = []
       const ringData = rings[space.ring]
       
-      // Same ring adjacencies (left and right neighbors) - these are always based on position
+      // Same ring adjacencies (left and right neighbors) - always position-based
       const prevPosition = space.position === 1 ? ringData.spaceCount : space.position - 1
       const nextPosition = space.position === ringData.spaceCount ? 1 : space.position + 1
       
       adjacentSpaces.push(`R${space.ring}-${prevPosition}`)
       adjacentSpaces.push(`R${space.ring}-${nextPosition}`)
       
-      // For cross-ring adjacencies, we need to find spaces that are angularly adjacent
-      // This ensures rotations work correctly
+      // Cross-ring adjacencies using IMMUTABLE areSpacesAdjacent function
+      const allSpaces = Object.values(spaces)
+      const adjacentRings = [space.ring - 1, space.ring + 1].filter(ring => ring > 0 && ring <= Object.keys(rings).length)
       
-      // Helper to check if two angles are close enough to be adjacent
-      const areAnglesAdjacent = (angle1: number, angle2: number, tolerance: number) => {
-        const diff = Math.abs(angle1 - angle2)
-        const wrappedDiff = Math.min(diff, 2 * Math.PI - diff)
-        return wrappedDiff <= tolerance
-      }
-      
-      // Check inner ring adjacencies
-      if (space.ring > 1) {
-        const innerRing = space.ring - 1
-        const innerSpaces = Object.values(spaces).filter(s => s.ring === innerRing)
+      adjacentRings.forEach(targetRing => {
+        const targetSpaces = allSpaces.filter(s => s.ring === targetRing)
         
-        // The tolerance is based on the angular size of spaces
-        const tolerance = Math.PI / (ringData.spaceCount / 2) // Roughly the angular span of a space
-        
-        innerSpaces.forEach(innerSpace => {
-          if (areAnglesAdjacent(space.angle, innerSpace.angle, tolerance)) {
-            adjacentSpaces.push(innerSpace.id)
+        targetSpaces.forEach(targetSpace => {
+          if (areSpacesAdjacent(space, targetSpace)) {
+            adjacentSpaces.push(targetSpace.id)
           }
         })
-      }
-      
-      // Check outer ring adjacencies
-      if (space.ring < Object.keys(rings).length) {
-        const outerRing = space.ring + 1
-        const outerSpaces = Object.values(spaces).filter(s => s.ring === outerRing)
-        
-        // The tolerance is based on the angular size of spaces
-        const tolerance = Math.PI / (ringData.spaceCount / 2)
-        
-        outerSpaces.forEach(outerSpace => {
-          if (areAnglesAdjacent(space.angle, outerSpace.angle, tolerance)) {
-            adjacentSpaces.push(outerSpace.id)
-          }
-        })
-      }
+      })
       
       // Remove duplicates and assign
       space.adjacentSpaces = [...new Set(adjacentSpaces)]
     })
 
-    // Connect bridge arms to ring 1 spaces based on angular proximity
+    // Connect bridge arms to ring 1 spaces using IMMUTABLE areSpacesAdjacent function
     Object.values(bridges).forEach(bridge => {
       if (bridge.subArea !== 'Center') {
         const ring1Spaces = Object.values(spaces).filter(s => s.ring === 1)
         
-        // Find the closest ring 1 spaces to this bridge arm
-        const sortedByDistance = ring1Spaces
-          .map(space => {
-            const diff = Math.abs(space.angle - bridge.angle)
-            const distance = Math.min(diff, 2 * Math.PI - diff)
-            return { space, distance }
-          })
-          .sort((a, b) => a.distance - b.distance)
-        
-        // Connect to the 2 closest spaces
-        sortedByDistance.slice(0, 2).forEach(({ space }) => {
-          bridge.adjacentSpaces.push(space.id)
-          space.adjacentSpaces.push(bridge.id)
+        ring1Spaces.forEach(space => {
+          if (areSpacesAdjacent(bridge, space)) {
+            bridge.adjacentSpaces.push(space.id)
+            space.adjacentSpaces.push(bridge.id)
+          }
         })
       }
     })

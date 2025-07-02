@@ -1,27 +1,28 @@
+/**
+ * GameLog Component - Updated for new architecture
+ */
+
 'use client'
 
-import { useGameLog } from '@/store/uiStore'
+import { useStateCoordinator } from '@/state/StateCoordinator'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 
 export function GameLog() {
-  const { gameLog } = useGameLog()
+  const { gameState } = useStateCoordinator()
 
   return (
     <Card className="h-96">
       <CardHeader>
-        <CardTitle>Game Log</CardTitle>
+        <CardTitle className="text-sm">📜 Game Log</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="space-y-1 overflow-y-auto h-64 text-sm">
-          {gameLog.length === 0 ? (
-            <p className="text-muted-foreground">No game events yet...</p>
-          ) : (
-            gameLog.map((entry: string, index: number) => (
-              <div key={index} className="py-1 border-b border-gray-100 last:border-b-0">
-                {entry}
-              </div>
-            ))
-          )}
+        <div className="text-xs text-gray-600 space-y-1 h-64 overflow-y-auto">
+          <p>Game started with {gameState.players.length} players</p>
+          <p>Current season: {gameState.season}</p>
+          <p>Turn: {gameState.turn}</p>
+          <p>Phase: {gameState.turnPhase}</p>
+          <p>Energy tax: {gameState.energyTaxPaid ? 'Paid' : 'Not paid'}</p>
+          {/* TODO: Add proper action logging */}
         </div>
       </CardContent>
     </Card>

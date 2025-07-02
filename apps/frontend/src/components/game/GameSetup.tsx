@@ -7,7 +7,9 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { useGameStore } from '@/store/gameStore'
+import { useCoordinatedGameActions, useStateCoordinator } from '@/state/StateCoordinator'
+import { useMultiplayerStore } from '@/state/MultiplayerStore'
+import { useGameStateStore } from '@/state/GameStateStore'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 // Generate consistent player ID for multiplayer games
@@ -49,27 +51,34 @@ export function GameSetup() {
   
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { 
-    initializeGameWithPlayerCount, 
-    createRoomWithSlots,
-    joinMultiplayerRoom, 
-    isConnected, 
-    isMultiplayer,
-    roomPlayerCount, 
-    maxRoomPlayers,
+  const gameActions = useCoordinatedGameActions()
+  const gameState = useGameStateStore(state => state.gameState)
+  
+  // Initialize StateCoordinator for automatic sync
+  useStateCoordinator()
+  const {
+    isConnected,
+    isConnecting,
     roomId: currentRoomId,
     playerName: currentPlayerName,
     playerNumber,
-    gamePhase,
-    createdRooms,
-    addCreatedRoom,
-    removeCreatedRoom,
-    updateRoomLastUsed,
-    loadCreatedRooms,
+    connectedPlayers,
+    roomConfig,
+    connectToRoom,
+    createRoom,
+    createRoomWithSlots,
+    startGameInRoom,
+    disconnectFromRoom,
     getAllPlayersInRoom,
-    getRoomConfig,
-    startGameInRoom
-  } = useGameStore()
+    getRoomConfig
+  } = useMultiplayerStore()
+
+  // Derived state
+  const isMultiplayer = isConnected
+  const roomPlayerCount = Object.keys(connectedPlayers).length
+  const maxRoomPlayers = roomConfig?.playerCount || 2
+  const gamePhase = 'setup' // TODO: Get from game state
+  const createdRooms: any[] = [] // TODO: Implement created rooms management
 
   const handleJoinRoom = useCallback(async (customRoomId?: string, customPlayerName?: string, isCreatingRoom?: boolean, customPlayerId?: string) => {
     const targetRoomId = customRoomId || roomId.trim()
@@ -93,9 +102,10 @@ export function GameSetup() {
       const playerId = customPlayerId || generatePlayerId()
       
       console.log(`🆔 Final Player ID: ${playerId}`)
-      console.log(`\n🚪 Calling joinMultiplayerRoom...`)
+      console.log(`\n🚪 Calling multiplayer room join...`)
       
-      await joinMultiplayerRoom(targetRoomId, targetPlayerName, playerId)
+      // Use the actual connectToRoom method from MultiplayerStore
+      await connectToRoom(targetRoomId, targetPlayerName, playerId)
       
       // Only update URL if joining an existing room (not creating)
       if (!isCreatingRoom && !searchParams?.get('room')) {
@@ -106,15 +116,15 @@ export function GameSetup() {
       setJoinError(error instanceof Error ? error.message : 'Failed to join room')
       setIsJoining(false)
     }
-  }, [roomId, playerName, searchParams, router, joinMultiplayerRoom])
+  }, [roomId, playerName, searchParams, router])
 
   // Set origin on client side and load created rooms
   useEffect(() => {
     if (typeof window !== 'undefined') {
       setOrigin(window.location.origin)
-      loadCreatedRooms()
+      // TODO: Load created rooms
     }
-  }, [loadCreatedRooms])
+  }, [])
 
   // Check for room in URL on mount and load saved player name
   useEffect(() => {
@@ -142,18 +152,24 @@ export function GameSetup() {
     }
   }, [searchParams, playerName, isConnected, handleJoinRoom])
 
-  // Redirect to game when it starts
+  // Watch for game start in multiplayer rooms
   useEffect(() => {
-    if (gamePhase === 'playing' && isConnected) {
-      // For multiplayer games, we're already on the right page
-      // The main page will show the game instead of setup
-      console.log('Game started - transitioning to game view')
+    // If we're in a multiplayer room and the game has been started by another player
+    if (isConnected && roomConfig?.gameStarted && !gameState.isGameStarted) {
+      console.log('🎮 Game started by room creator, waiting for game state sync via Y.js')
+      // The game state will be synced via Y.js automatically
+      // The StateCoordinator will handle updating our local state
     }
-  }, [gamePhase, isConnected])
+  }, [isConnected, roomConfig?.gameStarted, gameState.isGameStarted])
 
   const handleStartLocalGame = async () => {
     if (selectedPlayerCount === 1) {
-      initializeGameWithPlayerCount(1)
+      // Start single player game
+      try {
+        await gameActions.initializeGame(1)
+      } catch (error) {
+        console.error('Failed to start single player game:', error)
+      }
     } else {
       // Create multiplayer room for 2-4 player game
       if (!playerName.trim()) return
@@ -169,46 +185,28 @@ export function GameSetup() {
         console.log(`🏠 Generated Room ID: ${newRoomId}`)
         console.log(`🆔 Generated Creator ID: ${creatorId}`)
         
+        // Use the new createRoomWithSlots method for advanced room creation
         console.log(`\n🏗️ Calling createRoomWithSlots...`)
-        console.log(`🔢 Selected Player Count: ${selectedPlayerCount}`)
-        console.log(`📝 Parameters: roomId=${newRoomId}, playerCount=${selectedPlayerCount}, creatorName=${playerName.trim()}, creatorId=${creatorId}`)
-        
-        // Create room with pre-assigned player slots (this creates Y.js connection)
         const inviteLinks = await createRoomWithSlots(newRoomId, selectedPlayerCount, playerName.trim(), creatorId)
         
         console.log(`✅ Room created successfully! Received invite links:`, inviteLinks)
         
-        // Add to created rooms list with additional metadata
-        addCreatedRoom(newRoomId, `${playerName}'s Game`)
-        console.log(`✅ Added room to created rooms list`)
+        // Store invite links for sharing (optional - could be used for UI display)
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(`room-${newRoomId}-invites`, JSON.stringify(inviteLinks))
+          console.log(`✅ Stored invite links in localStorage`)
+        }
         
-        // Store invite links for sharing
-        localStorage.setItem(`room-${newRoomId}-invites`, JSON.stringify(inviteLinks))
-        console.log(`✅ Stored invite links in localStorage`)
+        // Don't initialize the game yet - wait for all players to join
+        // The game will be initialized when the room creator clicks "Start Game"
         
-        // Set up room state
-        setRoomId(newRoomId)
-        console.log(`✅ Set local room ID state`)
-        
-        console.log(`\n🚪 Now joining room as creator...`)
-        
-        // Join the room as the creator (Y.js connection already exists)
-        await joinMultiplayerRoom(newRoomId, playerName.trim(), creatorId)
-        
-        // Update URL to include creator's player ID for proper invite link format
+        // Update URL to include the room and player ID
         router.push(`/?room=${newRoomId}&player=${creatorId}`)
-        
-        console.log(`\n🎉 ===== ROOM CREATION & JOIN COMPLETE =====`)
         
       } catch (error) {
         console.error('Failed to create room:', error)
-        // Fall back to old method if needed
-        const newRoomId = `room-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`
-        addCreatedRoom(newRoomId, `${playerName}'s Game`)
-        setRoomId(newRoomId)
-        const fallbackId = generatePlayerId()
-        await joinMultiplayerRoom(newRoomId, playerName.trim(), fallbackId)
-        router.push(`/?room=${newRoomId}&player=${fallbackId}`)
+        // Fall back to local game
+        await gameActions.initializeGame(selectedPlayerCount)
       }
     }
   }
@@ -242,6 +240,30 @@ export function GameSetup() {
               </p>
             </CardHeader>
             <CardContent className="space-y-6">
+              {/* Shareable Link Section */}
+              <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
+                <h3 className="text-sm font-semibold text-blue-700 dark:text-blue-300 mb-2">
+                  Share this link with your friend:
+                </h3>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${origin}/?room=${currentRoomId}`}
+                    className="flex-1 px-3 py-2 text-sm font-mono bg-white dark:bg-slate-800 border rounded-md select-all"
+                    onClick={(e) => e.currentTarget.select()}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={copyRoomLink}
+                    className="whitespace-nowrap"
+                  >
+                    📋 Copy
+                  </Button>
+                </div>
+              </div>
+              
               <div className="text-center space-y-4">
                 <div className="flex items-center justify-center space-x-2">
                   <span className="text-lg font-semibold">You: {currentPlayerName}</span>
@@ -364,7 +386,22 @@ export function GameSetup() {
                       return (
                         <div className="pt-4 border-t">
                           <Button 
-                            onClick={() => startGameInRoom()}
+                            onClick={async () => {
+                              try {
+                                console.log('🎮 Player 1 starting multiplayer game...')
+                                // Initialize the game state locally (StateCoordinator will sync automatically)
+                                await gameActions.initializeGame(actualRoomSize)
+                                console.log('✅ Local game state initialized')
+                                
+                                // Notify other players that the game has started
+                                await startGameInRoom()
+                                console.log('✅ Room marked as game started')
+                                
+                                console.log('🔄 StateCoordinator will handle automatic sync to Y.js')
+                              } catch (error) {
+                                console.error('Failed to start game:', error)
+                              }
+                            }}
                             className="w-full bg-green-600 hover:bg-green-700"
                             size="lg"
                           >
@@ -442,11 +479,6 @@ export function GameSetup() {
                     <p className="text-sm text-red-700 dark:text-red-300">
                       ❌ {joinError}
                     </p>
-                    {joinError.includes('Invalid player ID') && (
-                      <p className="text-xs text-red-600 dark:text-red-400 mt-1">
-                        Please make sure you&apos;re using the correct invite link.
-                      </p>
-                    )}
                   </div>
                 )}
                 
@@ -583,7 +615,7 @@ export function GameSetup() {
             {/* Start Game Button */}
             <Button 
               onClick={handleStartLocalGame}
-              disabled={selectedPlayerCount === 2 && !playerName.trim()}
+              disabled={selectedPlayerCount >= 2 && !playerName.trim()}
               className="w-full h-12 text-lg font-semibold"
               size="lg"
             >
@@ -601,202 +633,86 @@ export function GameSetup() {
             </p>
           </CardHeader>
           <CardContent className="space-y-6">
-            {!isConnected ? (
-              <>
-                {/* Player Name Input */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Your Name</label>
-                  <Input
-                    placeholder="Enter your player name"
-                    value={playerName}
-                    onChange={(e) => setPlayerName(e.target.value)}
-                    maxLength={20}
-                  />
-                </div>
+            {/* Player Name Input */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Your Name</label>
+              <Input
+                placeholder="Enter your player name"
+                value={playerName}
+                onChange={(e) => setPlayerName(e.target.value)}
+                maxLength={20}
+              />
+            </div>
 
-                {/* Room ID Input */}
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">Room ID</label>
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder="Enter room ID or generate one"
-                      value={roomId}
-                      onChange={(e) => setRoomId(e.target.value)}
-                      maxLength={50}
-                    />
-                    <Button
-                      onClick={generateRoomId}
-                      variant="outline"
-                      className="whitespace-nowrap"
-                    >
-                      Generate
-                    </Button>
-                  </div>
-                  <p className="text-xs text-slate-500">
-                    Share this room ID with friends to play together
-                  </p>
-                </div>
-
-                {/* Multiplayer Info */}
-                <div className="bg-blue-50 dark:bg-blue-950 rounded-lg p-4">
-                  <h4 className="font-medium mb-2 text-blue-800 dark:text-blue-200">
-                    🌐 Online Multiplayer
-                  </h4>
-                  <p className="text-sm text-blue-700 dark:text-blue-300">
-                    Create or join a room to play with friends anywhere. Real-time synchronization 
-                    keeps everyone&apos;s game state in sync.
-                  </p>
-                </div>
-
-                {/* Room Actions */}
-                <div className="space-y-3">
-                  <Button 
-                    onClick={() => handleJoinRoom(undefined, undefined, false)}
-                    disabled={!roomId.trim() || !playerName.trim() || isJoining}
-                    className="w-full h-12 text-lg font-semibold"
-                    size="lg"
-                  >
-                    {isJoining ? (
-                      <>
-                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                        Connecting...
-                      </>
-                    ) : (
-                      `Join Room ${roomId || ''}`
-                    )}
-                  </Button>
-                  
-                  {roomId && (
-                    <Button
-                      onClick={copyRoomLink}
-                      variant="outline"
-                      className="w-full"
-                      size="sm"
-                    >
-                      📋 Copy Room Link
-                    </Button>
-                  )}
-                </div>
-              </>
-            ) : (
-              <div className="text-center space-y-4">
-                <div className="text-green-600 dark:text-green-400">
-                  ✅ Connected to Room {currentRoomId}
-                </div>
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">
-                    Players: {roomPlayerCount}/{maxRoomPlayers}
-                  </p>
-                  <p className="text-sm text-slate-600 dark:text-slate-400">
-                    Playing as: <span className="font-medium">{currentPlayerName}</span>
-                    {playerNumber && (
-                      <span className="ml-2 px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded text-xs">
-                        Player {playerNumber}
-                      </span>
-                    )}
-                  </p>
-                  {roomPlayerCount < maxRoomPlayers ? (
-                    <div className="space-y-2">
-                      <p className="text-sm text-slate-600 dark:text-slate-400">
-                        Waiting for {maxRoomPlayers - roomPlayerCount} more player{maxRoomPlayers - roomPlayerCount !== 1 ? 's' : ''}...
-                      </p>
-                      <Button
-                        onClick={copyRoomLink}
-                        variant="outline"
-                        size="sm"
-                        className="text-xs"
-                      >
-                        📋 Share Room Link
-                      </Button>
-                    </div>
-                  ) : (
-                    <p className="text-sm text-green-600 dark:text-green-400">
-                      🎮 Room full - game starting!
-                    </p>
-                  )}
-                </div>
+            {/* Room ID Input */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Room ID</label>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Enter room ID or generate one"
+                  value={roomId}
+                  onChange={(e) => setRoomId(e.target.value)}
+                  maxLength={50}
+                />
+                <Button
+                  onClick={generateRoomId}
+                  variant="outline"
+                  className="whitespace-nowrap"
+                >
+                  Generate
+                </Button>
               </div>
-            )}
+              <p className="text-xs text-slate-500">
+                Share this room ID with friends to play together
+              </p>
+            </div>
+
+            {/* Multiplayer Info */}
+            <div className="bg-blue-50 dark:bg-blue-950 rounded-lg p-4">
+              <h4 className="font-medium mb-2 text-blue-800 dark:text-blue-200">
+                🌐 Online Multiplayer
+              </h4>
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                Create or join a room to play with friends anywhere. Real-time synchronization 
+                keeps everyone&apos;s game state in sync.
+              </p>
+              <p className="text-xs text-orange-600 mt-2">
+                Note: Multiplayer features are being adapted to the new architecture
+              </p>
+            </div>
+
+            {/* Room Actions */}
+            <div className="space-y-3">
+              <Button 
+                onClick={() => handleJoinRoom(undefined, undefined, false)}
+                disabled={!roomId.trim() || !playerName.trim() || isJoining}
+                className="w-full h-12 text-lg font-semibold"
+                size="lg"
+              >
+                {isJoining ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Connecting...
+                  </>
+                ) : (
+                  `Join Room ${roomId || ''}`
+                )}
+              </Button>
+              
+              {roomId && (
+                <Button
+                  onClick={copyRoomLink}
+                  variant="outline"
+                  className="w-full"
+                  size="sm"
+                >
+                  📋 Copy Room Link
+                </Button>
+              )}
+            </div>
           </CardContent>
         </Card>
         </div>
-
-        {/* My Created Rooms Section */}
-        {createdRooms.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">📂 My Created Rooms</CardTitle>
-              <p className="text-slate-600 dark:text-slate-400 text-sm">
-                Rooms you&apos;ve created recently
-              </p>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                {createdRooms.slice(0, 5).map((room) => (
-                  <div key={room.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3">
-                        <span className="font-medium">{room.name}</span>
-                        <span className="text-xs text-slate-500 bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded">
-                          {room.id}
-                        </span>
-                      </div>
-                      <p className="text-sm text-slate-600 dark:text-slate-400">
-                        Created: {new Date(room.createdAt).toLocaleDateString()}
-                        {room.lastUsed !== room.createdAt && (
-                          <span className="ml-2">
-                            • Last used: {new Date(room.lastUsed).toLocaleDateString()}
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Button
-                        onClick={() => {
-                          setRoomId(room.id)
-                          updateRoomLastUsed(room.id)
-                          if (playerName.trim()) {
-                            handleJoinRoom(room.id, playerName.trim())
-                          }
-                        }}
-                        disabled={!playerName.trim()}
-                        variant="outline"
-                        size="sm"
-                        className="text-xs"
-                      >
-                        🎮 Join
-                      </Button>
-                      <Button
-                        onClick={() => {
-                          const roomLink = `${origin}/?room=${room.id}`
-                          navigator.clipboard.writeText(roomLink)
-                        }}
-                        variant="outline"
-                        size="sm"
-                        className="text-xs"
-                      >
-                        📋 Copy Link
-                      </Button>
-                      <Button
-                        onClick={() => removeCreatedRoom(room.id)}
-                        variant="outline"
-                        size="sm"
-                        className="text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
-                      >
-                        🗑️
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-                {createdRooms.length > 5 && (
-                  <p className="text-center text-sm text-slate-500">
-                    ...and {createdRooms.length - 5} more
-                  </p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
 
       {/* Footer Links */}

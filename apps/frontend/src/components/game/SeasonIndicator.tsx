@@ -1,11 +1,12 @@
 'use client'
 
-import { useGameStore } from '@/store/gameStore'
+import { useStateCoordinator } from '@/state/StateCoordinator'
 import { Badge } from '@/components/ui/badge'
 import { motion } from 'framer-motion'
 
 export function SeasonIndicator() {
-  const { season, year } = useGameStore()
+  const { gameState } = useStateCoordinator()
+  const { season, year } = gameState
 
   const seasonData = {
     Spring: { emoji: '🌸', color: 'bg-green-500', textColor: 'text-green-100' },
