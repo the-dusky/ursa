@@ -1,6 +1,64 @@
 # Changelog
 
-## [Unreleased] - 2025-06-25
+## [Unreleased] - 2025-07-02
+
+### Added
+- **Clean State Machine Architecture**
+  - Implemented complete architectural overhaul with strict separation of concerns
+  - Created single source of truth with `CoreGameState` interface
+  - Added centralized `StateManager` for all state orchestration
+  - Built type-safe `ActionDispatcher` system for all game actions
+  - Implemented separate stores: `GameStateStore` (game data), `MultiplayerStore` (Y.js sync)
+  - Added `StateCoordinator` for clean store synchronization
+  - Created comprehensive test suite with 80+ tests covering all new components
+
+- **Y.js Persistence and Multiplayer Improvements**
+  - Added LevelDB persistence for Y.js server to maintain room configuration
+  - Implemented event-driven Y.js observers replacing brittle retry mechanisms
+  - Fixed room synchronization so all players transition together
+  - Added "Start Game" button for room creator when enough players join
+  - Enhanced logging system for multiplayer debugging
+
+- **Board Adjacency System**
+  - Created isolated `AdjacencyCalculator.ts` with angle-based edge detection
+  - Added comprehensive regression tests to prevent adjacency bugs
+  - Protected critical edge cases (e.g., R1-7 and R0-NORTH adjacency)
+
+- **Development Workflow Enhancements**
+  - Added logged development mode with real-time monitoring
+  - Created test utilities and mock systems for Y.js and WebSocket
+  - Implemented Vitest configuration with coverage reporting
+  - Added Playwright MCP integration for UI testing
+
+### Changed
+- **Complete Migration from Legacy Architecture**
+  - Replaced complex coupled state system with clean architecture
+  - Eliminated all format conversions between state representations
+  - Removed simulation system in favor of integrated game engine
+  - Migrated from mixed-concern stores to single-responsibility stores
+  - Updated all game components to use new `useGameState()` hook
+
+### Fixed
+- **Harvest Restriction Bug**
+  - Fixed GameEngine to use consistent piece object references
+  - Preserved `movedThisTurn` flag through state updates
+  - Moved `resetMovementFlags` to turn advancement (not phase advancement)
+  - Bears that don't move can no longer harvest resources
+
+- **Multiplayer Synchronization Issues**
+  - Fixed `isGameStarted` synchronization across all players
+  - Resolved `roomConfig.playerCount` undefined issue
+  - Fixed race conditions with new lock pattern and debounced updates
+  - Implemented timestamp-based conflict resolution
+
+### Removed
+- Legacy `gameStore.ts` (replaced by new architecture)
+- Simulation system and `/simulation` page
+- BearCard components (consolidated into main game components)
+- Complex format conversion functions
+- Coupled state management patterns
+
+## [Released] - 2025-06-25
 
 ### Fixed
 - **Code Quality and Build System**
