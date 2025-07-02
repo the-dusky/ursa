@@ -147,7 +147,7 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
       <CardContent>
 
         {/* Setup Phase Display */}
-        {gameState.gamePhase === 'setup' && (
+        {(gameState.gamePhase === 'dice_roll' || gameState.gamePhase === 'board_setup') && (
           <div className="mb-2">
             <div className="text-center space-y-2">
               <div className="font-medium text-sm bg-blue-100 text-blue-800 px-3 py-2 rounded">
@@ -551,7 +551,7 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
         )}
 
         {/* Simple bear count during setup and bear placement */}
-        {(gameState.gamePhase === 'setup' || gameState.gamePhase === 'bear_placement') && (
+        {(gameState.gamePhase === 'dice_roll' || gameState.gamePhase === 'board_setup' || gameState.gamePhase === 'bear_placement') && (
           <div className="mt-1">
             <div className="font-medium text-sm mb-1">Bears:</div>
             <div className="text-center text-sm text-gray-500 py-2">

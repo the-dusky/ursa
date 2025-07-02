@@ -3,6 +3,11 @@
 ## [Unreleased] - 2025-07-02
 
 ### Added
+- **Proper Game Setup Sequence**
+  - Implemented strict phase-based setup: dice_roll → board_setup → bear_placement → playing
+  - Added new game phases `dice_roll` and `board_setup` to replace generic `setup` phase
+  - Enforced sequential setup flow preventing actions out of order
+  - Added automatic phase progression when each setup step completes
 - **Clean State Machine Architecture**
   - Implemented complete architectural overhaul with strict separation of concerns
   - Created single source of truth with `CoreGameState` interface
@@ -39,6 +44,13 @@
   - Updated all game components to use new `useGameState()` hook
 
 ### Fixed
+- **Game Setup Flow Issues**
+  - Fixed setup phase validation to prevent actions before dice rolling
+  - Fixed bear placement to only start after board setup is complete
+  - Fixed game started state to only trigger after all bears are placed
+  - Updated UI components to properly handle new setup phases
+  - Fixed TypeScript errors with obsolete 'setup' phase references
+
 - **Harvest Restriction Bug**
   - Fixed GameEngine to use consistent piece object references
   - Preserved `movedThisTurn` flag through state updates

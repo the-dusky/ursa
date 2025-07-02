@@ -45,7 +45,7 @@ function HomeContent() {
     const roomIdParam = searchParams?.get('room')
     const playerId = searchParams?.get('player')
     
-    if (roomIdParam && gameState.gamePhase === 'setup') {
+    if (roomIdParam && (gameState.gamePhase === 'dice_roll' || gameState.gamePhase === 'board_setup')) {
       // If there's a player ID in the URL, they have a valid invite - give more time
       const timeoutDuration = playerId ? 5000 : 3000 // 5 seconds with player ID, 3 without
       

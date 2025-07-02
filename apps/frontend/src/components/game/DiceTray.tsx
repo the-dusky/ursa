@@ -101,23 +101,24 @@ export function DiceTray() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2">
           🎲 Dice Tray
-          {gameState.gamePhase === 'setup' && (
+          {(gameState.gamePhase === 'dice_roll' || gameState.gamePhase === 'board_setup') && (
             <span className="text-sm bg-blue-100 text-blue-800 px-2 py-1 rounded">
-              SETUP
+              {gameState.gamePhase === 'dice_roll' ? 'DICE ROLL' : 'BOARD SETUP'}
             </span>
           )}
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {/* Control Buttons - only show during setup phase */}
-        {gameState.gamePhase === 'setup' && (
+        {/* Control Buttons - only show during dice and board setup phases */}
+        {(gameState.gamePhase === 'dice_roll' || gameState.gamePhase === 'board_setup') && (
           <div className="flex gap-2 flex-wrap">
             <Button 
               onClick={rollForBoardSetup}
-              disabled={gameState.diceState.isRolling || (isMultiplayer && playerNumber !== 1)}
+              disabled={gameState.diceState.isRolling || (isMultiplayer && playerNumber !== 1) || gameState.gamePhase === 'board_setup'}
               className="flex-1"
             >
               {gameState.diceState.isRolling ? '🎲 Rolling...' : 
+               gameState.gamePhase === 'board_setup' ? '🎲 Dice Rolled' :
                isMultiplayer && playerNumber !== 1 ? '🎲 Player 1 Rolls' : 
                '🎲 Roll for Board Setup'}
             </Button>
@@ -141,16 +142,18 @@ export function DiceTray() {
           </div>
         )}
         
-        {/* Show setup instructions during setup */}
-        {gameState.gamePhase === 'setup' && (
+        {/* Show setup instructions during dice/board setup phases */}
+        {(gameState.gamePhase === 'dice_roll' || gameState.gamePhase === 'board_setup') && (
           <div className="text-center p-4 bg-blue-50 rounded-lg">
-            <h4 className="font-medium text-blue-800 mb-2">🎯 Setup Phase</h4>
+            <h4 className="font-medium text-blue-800 mb-2">
+              🎯 {gameState.gamePhase === 'dice_roll' ? 'Dice Roll Phase' : 'Board Setup Phase'}
+            </h4>
             <p className="text-sm text-blue-700">
-              {!gameState.diceState.positionRolls 
+              {gameState.gamePhase === 'dice_roll' && !gameState.diceState.positionRolls
                 ? "First, roll dice to set up the board rotation"
-                : !gameState.diceState.directionRolls
+                : gameState.gamePhase === 'dice_roll' && !gameState.diceState.directionRolls
                 ? "Rolling direction dice..."
-                : gameState.diceState.rotations.length > 0
+                : gameState.gamePhase === 'board_setup' && gameState.diceState.rotations.length > 0
                 ? "Click 'Apply to Board & Start' to begin bear placement"
                 : "Calculating board rotations..."
               }

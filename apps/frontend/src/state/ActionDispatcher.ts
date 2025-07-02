@@ -783,13 +783,22 @@ export class ActionDispatcher {
         }
       }
       
+      // Check if both dice sets are rolled and advance to board_setup phase
+      const bothDiceRolled = newDiceState.positionRolls && newDiceState.directionRolls
+      const gamePhase = bothDiceRolled ? 'board_setup' : state.gamePhase
+      
       const newState = { 
         ...state, 
+        gamePhase: gamePhase as GamePhase,
         diceState: newDiceState,
         lastUpdated: Date.now()
       }
       
-      return { success: true, state: newState, newState, message: `Rolled ${action.diceType} dice: [${dice.join(', ')}]` }
+      const message = bothDiceRolled 
+        ? `Rolled ${action.diceType} dice: [${dice.join(', ')}] - Board setup ready!`
+        : `Rolled ${action.diceType} dice: [${dice.join(', ')}]`
+      
+      return { success: true, state: newState, newState, message }
     })
     
     this.registerHandler('APPLY_BOARD_ROTATIONS', (state, action) => {
@@ -844,7 +853,7 @@ export class ActionDispatcher {
       const newState = {
         ...state,
         gamePhase: 'bear_placement' as const,
-        isGameStarted: true, // Set game as started when bear placement begins
+        isGameStarted: false, // Game starts only when all bears are placed
         bearPlacementState: {
           currentPlayerIndex: playerIndices[0], // Start with last player (highest index)
           playersRemaining: [...playerIndices], // All players in reverse order
@@ -1477,13 +1486,21 @@ export class ActionDispatcher {
    * Register default action validators
    */
   private registerDefaultValidators(): void {
-    // Global validator: Block game actions during setup and bear placement phases
+    // Global validator: Block game actions during setup phases
     const gamePhaseValidator = (state: CoreGameState, action: AnyGameAction) => {
-      // Allow setup actions during setup phase
-      if (state.gamePhase === 'setup') {
-        const allowedSetupActions = ['ROLL_DICE', 'APPLY_BOARD_ROTATIONS', 'START_BEAR_PLACEMENT']
-        if (!allowedSetupActions.includes(action.type)) {
-          return { valid: false, reason: 'Game is in setup phase - only dice rolling and board setup allowed' }
+      // Allow only dice rolling during dice_roll phase
+      if (state.gamePhase === 'dice_roll') {
+        const allowedDiceActions = ['ROLL_DICE']
+        if (!allowedDiceActions.includes(action.type)) {
+          return { valid: false, reason: 'Game is in dice roll phase - only dice rolling allowed' }
+        }
+      }
+      
+      // Allow only board setup actions during board_setup phase
+      if (state.gamePhase === 'board_setup') {
+        const allowedBoardSetupActions = ['APPLY_BOARD_ROTATIONS', 'START_BEAR_PLACEMENT']
+        if (!allowedBoardSetupActions.includes(action.type)) {
+          return { valid: false, reason: 'Game is in board setup phase - only board setup and starting bear placement allowed' }
         }
       }
       

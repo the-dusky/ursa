@@ -1,6 +1,7 @@
 'use client'
 
 import { useStateCoordinator } from '@/state/StateCoordinator'
+import { useMultiplayerStore } from '@/state/MultiplayerStore'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -8,6 +9,7 @@ import { useBearPlacement } from '@/hooks/useBearPlacement'
 
 export function BearPlacement() {
   const { gameState } = useStateCoordinator()
+  const { isConnected: isMultiplayer } = useMultiplayerStore()
   const {
     selectedSpaceId,
     isMyTurn,

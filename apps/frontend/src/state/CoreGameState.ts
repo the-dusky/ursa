@@ -125,7 +125,7 @@ export interface StateValidation {
 export function createInitialGameState(gameId: string = 'game-' + Date.now()): CoreGameState {
   return {
     gameId,
-    gamePhase: 'setup',
+    gamePhase: 'dice_roll',
     season: 'Spring',
     year: 1,
     turn: 1,

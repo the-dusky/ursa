@@ -139,7 +139,7 @@ export function GameControls() {
         )}
         
         <div className="flex flex-wrap gap-2">
-          {gameState.gamePhase === 'setup' && (
+          {(gameState.gamePhase === 'dice_roll' || gameState.gamePhase === 'board_setup') && (
             <Button onClick={() => gameActions.initializeGame(2)} variant="default">
               Start Game
             </Button>

@@ -6,7 +6,7 @@
  */
 
 export type Season = 'Spring' | 'Summer' | 'Autumn' | 'Winter'
-export type GamePhase = 'setup' | 'bear_placement' | 'playing' | 'ended'
+export type GamePhase = 'dice_roll' | 'board_setup' | 'bear_placement' | 'playing' | 'ended'
 export type TurnPhase = 'movement' | 'harvest' | 'eat' | 'hibernation'
 export type ResourceType = 'grains' | 'berries' | 'salmon' | 'honey' | 'bearMeat'
 export type ConversionType = 'energy' | 'fat'
