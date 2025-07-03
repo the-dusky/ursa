@@ -44,23 +44,20 @@ export function useStateCoordinator() {
       // Update local game state store
       const currentState = useGameStateStore.getState().gameState
       
-      // Only update if there are actual changes (simple timestamp check)
-      if (multiplayerGameState.lastUpdated > currentState.lastUpdated) {
-        console.log('✅ Applying multiplayer game state locally')
-        
-        // Ensure critical fields are preserved from current state if missing from multiplayer state
-        const mergedState: CoreGameState = {
-          ...multiplayerGameState,
-          // Preserve gameId if missing (critical for validation)
-          gameId: multiplayerGameState.gameId || currentState.gameId || `game-${Date.now()}`,
-          // Preserve other critical fields if needed
-          createdAt: multiplayerGameState.createdAt || currentState.createdAt || Date.now()
-        }
-        
-        useGameStateStore.getState().setState(mergedState)
-      } else {
-        console.log('⏭️ Skipping stale multiplayer state')
+      // Apply multiplayer state directly - let Y.js handle conflict resolution
+      // No longer using timestamp-based conflict resolution as Y.js CRDTs handle this
+      console.log('✅ Applying multiplayer game state locally (Y.js CRDT sync)')
+      
+      // Ensure critical fields are preserved from current state if missing from multiplayer state
+      const mergedState: CoreGameState = {
+        ...multiplayerGameState,
+        // Preserve gameId if missing (critical for validation)
+        gameId: multiplayerGameState.gameId || currentState.gameId || `game-${Date.now()}`,
+        // Preserve other critical fields if needed
+        createdAt: multiplayerGameState.createdAt || currentState.createdAt || Date.now()
       }
+      
+      useGameStateStore.getState().setState(mergedState)
     })
     
     return unsubscribe

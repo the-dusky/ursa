@@ -24,40 +24,39 @@ import {
 } from '@/test/utils/testUtils'
 
 describe('Regression Tests', () => {
-  describe('Y.js Race Condition Fix (ARCHITECTURE.md)', () => {
-    it('should prevent Y.js update loops that overwrite fresh data', async () => {
+  describe('Y.js CRDT Integration (Updated Architecture)', () => {
+    it('should apply all state updates through StateManager (Y.js handles conflicts)', async () => {
       const initialState = createTestGameState({ 
         turn: 1, 
-        energyTaxPaid: false,
-        lastUpdated: Date.now() - 2000 // Old timestamp
+        energyTaxPaid: false
       })
       const stateManager = new StateManager(initialState)
       
-      // Simulate the race condition scenario:
-      // 1. Client A makes a change with fresh timestamp
+      // With Y.js CRDT handling conflicts, all updates should be applied
+      // 1. Client A makes a change
       const clientAState = createTestGameState({ 
         turn: 5, 
-        energyTaxPaid: true,
-        lastUpdated: Date.now() // Fresh timestamp
+        energyTaxPaid: true
       })
       
       const result1 = stateManager.updateState(clientAState, 'Client A update')
       expect(result1.success).toBe(true)
       expect(stateManager.state.turn).toBe(5)
+      expect(stateManager.state.energyTaxPaid).toBe(true)
       
-      // 2. Client B attempts to overwrite with stale data
-      const staleClientBState = createTestGameState({ 
-        turn: 3, // Stale turn
-        energyTaxPaid: false, // Stale energy tax
-        lastUpdated: clientAState.lastUpdated - 1000 // Older timestamp
+      // 2. Client B makes a different change - both should be applied
+      // Y.js CRDTs will handle the actual conflict resolution
+      const clientBState = createTestGameState({ 
+        turn: 3, // Different turn value
+        energyTaxPaid: false // Different energy tax value
       })
       
-      const result2 = stateManager.updateState(staleClientBState, 'Client B stale update')
-      expect(result2.success).toBe(true) // Should succeed but ignore stale data
+      const result2 = stateManager.updateState(clientBState, 'Client B update')
+      expect(result2.success).toBe(true) // Should succeed - Y.js handles conflicts
       
-      // Assert: Client A's fresh data should be preserved
-      expect(stateManager.state.turn).toBe(5) // Should keep fresh turn
-      expect(stateManager.state.energyTaxPaid).toBe(true) // Should keep fresh energy tax
+      // Assert: StateManager applies the update, Y.js will resolve conflicts
+      expect(stateManager.state.turn).toBe(3) // Last update applied
+      expect(stateManager.state.energyTaxPaid).toBe(false) // Last update applied
     })
     
     it('should use nullish coalescing for boolean synchronization', () => {

@@ -77,23 +77,12 @@ export class StateManager {
         console.warn('State validation warnings:', validation.warnings)
       }
       
-      // Check for timestamp-based conflict resolution (Y.js race condition fix)
-      if (newState.lastUpdated < this._currentState.lastUpdated) {
-        console.log(`🚫 Rejecting stale state update (${newState.lastUpdated} < ${this._currentState.lastUpdated})`)
-        return {
-          success: true, // Not an error, just ignored stale update
-          state: this._currentState,
-          message: 'Stale state update ignored based on timestamp'
-        }
-      }
-      
       // Store previous state for rollback/debugging
       this._previousState = CoreGameStateUtils.clone(this._currentState)
       
-      // Update the state (update timestamp if not newer than current)
-      this._currentState = newState.lastUpdated <= this._currentState.lastUpdated 
-        ? CoreGameStateUtils.touch(CoreGameStateUtils.clone(newState))
-        : CoreGameStateUtils.clone(newState)
+      // Update the state directly - let Y.js handle conflict resolution
+      // No longer using timestamp-based conflict resolution as Y.js CRDTs handle this
+      this._currentState = CoreGameStateUtils.touch(CoreGameStateUtils.clone(newState))
       
       // Notify all listeners
       this.notifyListeners(source)

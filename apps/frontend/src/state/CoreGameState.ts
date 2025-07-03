@@ -156,10 +156,127 @@ export function createInitialGameState(gameId: string = 'game-' + Date.now()): C
  */
 export const CoreGameStateUtils = {
   /**
-   * Create a deep copy of game state
+   * Create a deep copy of game state without JSON serialization
+   * Uses structured cloning for better performance and type safety
    */
   clone(state: CoreGameState): CoreGameState {
-    return JSON.parse(JSON.stringify(state))
+    // Use structured cloning instead of JSON serialization
+    // This preserves types and handles edge cases better
+    return {
+      // Basic game state from engine
+      gamePhase: state.gamePhase,
+      turnPhase: state.turnPhase,
+      currentPlayerIndex: state.currentPlayerIndex,
+      season: state.season,
+      year: state.year,
+      turn: state.turn,
+      energyTaxPaid: state.energyTaxPaid,
+      
+      // Enhanced fields
+      gameId: state.gameId,
+      isGameStarted: state.isGameStarted,
+      createdAt: state.createdAt,
+      lastUpdated: state.lastUpdated,
+      
+      // Deep clone players array with proper engine types
+      players: state.players.map(player => ({
+        id: player.id,
+        name: player.name,
+        color: player.color,
+        score: player.score,
+        pieceCount: { ...player.pieceCount },
+        barrenSpaces: [...player.barrenSpaces],
+        harvestedThisTurn: [...player.harvestedThisTurn],
+        // Enhanced player fields
+        isActive: player.isActive,
+        playerNumber: player.playerNumber,
+        pieces: player.pieces.map(piece => ({
+          id: piece.id,
+          playerId: piece.playerId,
+          spaceId: piece.spaceId,
+          type: piece.type,
+          health: piece.health,
+          resources: { ...piece.resources },
+          energy: piece.energy,
+          fat: piece.fat,
+          emergencyEnergy: piece.emergencyEnergy,
+          isHibernating: piece.isHibernating,
+          movedThisTurn: piece.movedThisTurn,
+          harvestedThisTurn: piece.harvestedThisTurn
+        }))
+      })),
+      
+      // Deep clone board with proper engine types
+      board: {
+        spaces: Object.fromEntries(
+          Object.entries(state.board.spaces).map(([id, space]) => [
+            id,
+            {
+              id: space.id,
+              ring: space.ring,
+              position: space.position,
+              centerAngle: space.centerAngle,
+              edgeAngles: space.edgeAngles ? { ...space.edgeAngles } : undefined,
+              quadrant: space.quadrant,
+              subArea: space.subArea,
+              canProduce: space.canProduce,
+              hasHoney: space.hasHoney,
+              adjacentSpaces: [...space.adjacentSpaces],
+              piece: space.piece ? {
+                id: space.piece.id,
+                playerId: space.piece.playerId,
+                spaceId: space.piece.spaceId,
+                type: space.piece.type,
+                health: space.piece.health,
+                resources: { ...space.piece.resources },
+                energy: space.piece.energy,
+                fat: space.piece.fat,
+                emergencyEnergy: space.piece.emergencyEnergy,
+                isHibernating: space.piece.isHibernating,
+                movedThisTurn: space.piece.movedThisTurn,
+                harvestedThisTurn: space.piece.harvestedThisTurn
+              } : null
+            }
+          ])
+        ),
+        rings: Object.fromEntries(
+          Object.entries(state.board.rings).map(([ring, data]) => [
+            ring,
+            { ...data }
+          ])
+        ),
+        bridges: Object.fromEntries(
+          Object.entries(state.board.bridges).map(([id, space]) => [
+            id,
+            { ...space, piece: space.piece ? { ...space.piece } : null }
+          ])
+        ),
+        rotations: [...state.board.rotations]
+      },
+      
+      // Deep clone dice state
+      diceState: {
+        positionRolls: state.diceState.positionRolls ? {
+          dice: [...state.diceState.positionRolls.dice],
+          total: state.diceState.positionRolls.total,
+          timestamp: state.diceState.positionRolls.timestamp
+        } : null,
+        directionRolls: state.diceState.directionRolls ? {
+          dice: [...state.diceState.directionRolls.dice],
+          total: state.diceState.directionRolls.total,
+          timestamp: state.diceState.directionRolls.timestamp
+        } : null,
+        rotations: [...state.diceState.rotations],
+        isRolling: state.diceState.isRolling
+      },
+      
+      // Bear placement state if present
+      bearPlacementState: state.bearPlacementState ? {
+        currentPlayerIndex: state.bearPlacementState.currentPlayerIndex,
+        playersRemaining: [...state.bearPlacementState.playersRemaining],
+        isComplete: state.bearPlacementState.isComplete
+      } : undefined
+    }
   },
   
   /**
