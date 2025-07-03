@@ -9,7 +9,7 @@
  * It eliminates the complex race condition handling from the old system.
  */
 
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useGameStateStore, useGameActions } from './GameStateStore'
 import { useMultiplayerStore, useMultiplayerActions } from './MultiplayerStore'
 import { CoreGameState } from './CoreGameState'
@@ -24,9 +24,12 @@ export function useStateCoordinator() {
   const { syncGameState, onGameStateSync } = useMultiplayerActions()
   const isConnected = useMultiplayerStore(state => state.isConnected)
   
-  // Sync local game state changes to multiplayer
+  // Use ref to track if we're currently updating from multiplayer to prevent loops
+  const isUpdatingFromMultiplayer = useRef(false)
+  
+  // Sync local game state changes to multiplayer (but not if we're updating from multiplayer)
   useEffect(() => {
-    if (!isConnected) return
+    if (!isConnected || isUpdatingFromMultiplayer.current) return
     
     console.log('🔄 Syncing local game state to multiplayer')
     syncGameState(gameState)
@@ -41,23 +44,33 @@ export function useStateCoordinator() {
     const unsubscribe = onGameStateSync((multiplayerGameState: CoreGameState) => {
       console.log('📥 Received game state from multiplayer')
       
-      // Update local game state store
-      const currentState = useGameStateStore.getState().gameState
+      // Set flag to prevent sync loop
+      isUpdatingFromMultiplayer.current = true
       
-      // Apply multiplayer state directly - let Y.js handle conflict resolution
-      // No longer using timestamp-based conflict resolution as Y.js CRDTs handle this
-      console.log('✅ Applying multiplayer game state locally (Y.js CRDT sync)')
-      
-      // Ensure critical fields are preserved from current state if missing from multiplayer state
-      const mergedState: CoreGameState = {
-        ...multiplayerGameState,
-        // Preserve gameId if missing (critical for validation)
-        gameId: multiplayerGameState.gameId || currentState.gameId || `game-${Date.now()}`,
-        // Preserve other critical fields if needed
-        createdAt: multiplayerGameState.createdAt || currentState.createdAt || Date.now()
+      try {
+        // Update local game state store
+        const currentState = useGameStateStore.getState().gameState
+        
+        // Apply multiplayer state directly - let Y.js handle conflict resolution
+        // No longer using timestamp-based conflict resolution as Y.js CRDTs handle this
+        console.log('✅ Applying multiplayer game state locally (Y.js CRDT sync)')
+        
+        // Ensure critical fields are preserved from current state if missing from multiplayer state
+        const mergedState: CoreGameState = {
+          ...multiplayerGameState,
+          // Preserve gameId if missing (critical for validation)
+          gameId: multiplayerGameState.gameId || currentState.gameId || `game-${Date.now()}`,
+          // Preserve other critical fields if needed
+          createdAt: multiplayerGameState.createdAt || currentState.createdAt || Date.now()
+        }
+        
+        useGameStateStore.getState().setState(mergedState)
+      } finally {
+        // Reset flag after a short delay to allow the state update to complete
+        setTimeout(() => {
+          isUpdatingFromMultiplayer.current = false
+        }, 100)
       }
-      
-      useGameStateStore.getState().setState(mergedState)
     })
     
     return unsubscribe

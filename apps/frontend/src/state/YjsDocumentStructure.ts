@@ -589,7 +589,10 @@ export function observeGameState(
         })
       }
     }
-    yjsDoc.players.observe(observer)
+    yjsDoc.players.observe((event, transaction) => {
+      if (transaction.local) return // Skip local changes to prevent loops
+      observer(event, transaction)
+    })
     unsubscribers.push(() => yjsDoc.players.unobserve(observer))
   }
   
@@ -623,7 +626,10 @@ export function observeGameState(
         }
       })
     }
-    yjsDoc.gameState.observe(observer)
+    yjsDoc.gameState.observe((event, transaction) => {
+      if (transaction.local) return // Skip local changes to prevent loops
+      observer(event, transaction)
+    })
     unsubscribers.push(() => yjsDoc.gameState.unobserve(observer))
   }
   
@@ -681,7 +687,10 @@ export function observeGameState(
       previousSpaceStates = currentSpaceStates
     }
     
-    yjsDoc.spaces.observe(observer)
+    yjsDoc.spaces.observe((event, transaction) => {
+      if (transaction.local) return // Skip local changes to prevent loops
+      observer(event, transaction)
+    })
     unsubscribers.push(() => yjsDoc.spaces.unobserve(observer))
   }
   
@@ -690,7 +699,10 @@ export function observeGameState(
     const observer = () => {
       safeCall(callbacks.onDiceChange, yjsToDiceState(yjsDoc.diceState))
     }
-    yjsDoc.diceState.observe(observer)
+    yjsDoc.diceState.observe((event, transaction) => {
+      if (transaction.local) return // Skip local changes to prevent loops
+      observer(event, transaction)
+    })
     unsubscribers.push(() => yjsDoc.diceState.unobserve(observer))
   }
   

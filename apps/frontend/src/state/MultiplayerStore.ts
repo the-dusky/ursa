@@ -170,11 +170,11 @@ export const useMultiplayerStore = create<MultiplayerStore>()(
           try {
             console.log(`🔌 Connecting to room: ${roomId}`)
             
-            // Create Y.js document
-            const yjsDoc = new Y.Doc()
+            // Create properly structured Y.js document
+            const yjsGameDoc = createYjsDocument()
             
-            // Create WebSocket provider
-            const yjsProvider = new WebsocketProvider(WEBSOCKET_URL, roomId, yjsDoc)
+            // Create WebSocket provider with the proper document
+            const yjsProvider = new WebsocketProvider(WEBSOCKET_URL, roomId, yjsGameDoc.doc)
             
             // Wait for connection
             await new Promise<void>((resolve, reject) => {
@@ -196,20 +196,6 @@ export const useMultiplayerStore = create<MultiplayerStore>()(
                 reject(new Error(errorMessage))
               })
             })
-            
-            // Use the proper Y.js document structure from YjsDocumentStructure
-            const yjsGameDoc = createYjsDocument()
-            // Replace the document instance with our connected one
-            yjsGameDoc.doc = yjsDoc
-            // Recreate the structure with the connected document
-            yjsGameDoc.gameState = yjsDoc.getMap('gameState')
-            yjsGameDoc.players = yjsDoc.getArray('players')
-            yjsGameDoc.spaces = yjsDoc.getArray('spaces')
-            yjsGameDoc.board = yjsDoc.getMap('board')
-            yjsGameDoc.diceState = yjsDoc.getMap('diceState')
-            yjsGameDoc.gameConfig = yjsDoc.getMap('gameConfig')
-            yjsGameDoc.roomState = yjsDoc.getMap('roomState')
-            yjsGameDoc.connectedUsers = yjsDoc.getMap('connectedUsers')
             
             // Initialize the document structure properly
             initializeYjsDocument(yjsGameDoc)
@@ -242,21 +228,25 @@ export const useMultiplayerStore = create<MultiplayerStore>()(
               }
             })
             
-            // Also observe the main game state map for any other changes
-            yjsGameDoc.gameState.observe(() => {
-              console.log('📡 Direct gameState map change detected')
+            // Also observe the main game state map for any other changes (but skip our own changes)
+            yjsGameDoc.gameState.observe((event, transaction) => {
+              // Skip changes made by this client to prevent loops
+              if (transaction.local) return
+              console.log('📡 Direct gameState map change detected from remote')
               notifyGameStateChange('direct gameState change')
             })
             
-            // Observe board changes
-            yjsGameDoc.board.observe(() => {
-              console.log('📡 Board changes detected')
+            // Observe board changes (but skip our own changes)
+            yjsGameDoc.board.observe((event, transaction) => {
+              if (transaction.local) return
+              console.log('📡 Board changes detected from remote')
               notifyGameStateChange('board change')
             })
             
-            // Observe spaces changes  
-            yjsGameDoc.spaces.observe(() => {
-              console.log('📡 Spaces changes detected')
+            // Observe spaces changes (but skip our own changes)
+            yjsGameDoc.spaces.observe((event, transaction) => {
+              if (transaction.local) return
+              console.log('📡 Spaces changes detected from remote')
               notifyGameStateChange('spaces change')
             })
             
@@ -313,7 +303,7 @@ export const useMultiplayerStore = create<MultiplayerStore>()(
               isConnecting: false,
               isConnected: true,
               playerNumber,
-              yjsDoc,
+              yjsDoc: yjsGameDoc.doc,
               yjsProvider,
               connectionError: null
             })
@@ -520,6 +510,8 @@ export const useMultiplayerStore = create<MultiplayerStore>()(
             
           } catch (error) {
             console.error('Error syncing game state:', error)
+            console.error('Game state that failed to sync:', gameState)
+            console.error('Y.js document state:', yjsDoc ? 'exists' : 'null')
           }
         },
         
