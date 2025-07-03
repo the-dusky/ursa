@@ -116,11 +116,6 @@ interface MultiplayerActions {
   
   // Error handling
   clearError: () => void
-  
-  // Helper methods for Y.js integration
-  reconstructGameStateFromYjs: (gameStateMap: Y.Map<any>, yjsDoc: Y.Doc) => CoreGameState | null
-  syncPlayersToYjs: (playersArray: Y.Array<any>, players: any[]) => void
-  syncBoardToYjs: (boardMap: Y.Map<any>, board: any) => void
 }
 
 /**
@@ -219,34 +214,50 @@ export const useMultiplayerStore = create<MultiplayerStore>()(
             // Initialize the document structure properly
             initializeYjsDocument(yjsGameDoc)
             
-            // Set up proper granular observers
-            observeGameState(yjsGameDoc, {
-              onPlayersChange: () => {
-                const gameState = yjsToGameState(yjsGameDoc)
-                if (gameState) {
-                  console.log('📡 Received player changes from Y.js')
-                  gameStateSyncCallbacks.forEach(callback => {
-                    try {
-                      callback(gameState)
-                    } catch (error) {
-                      console.error('Error in game state sync callback:', error)
-                    }
-                  })
-                }
-              },
-              onGamePhaseChange: () => {
-                const gameState = yjsToGameState(yjsGameDoc)
-                if (gameState) {
-                  console.log('📡 Received game phase change from Y.js')
-                  gameStateSyncCallbacks.forEach(callback => {
-                    try {
-                      callback(gameState)
-                    } catch (error) {
-                      console.error('Error in game state sync callback:', error)
-                    }
-                  })
-                }
+            // Set up comprehensive observers to catch all game state changes
+            const notifyGameStateChange = (changeType: string) => {
+              const gameState = yjsToGameState(yjsGameDoc)
+              if (gameState) {
+                console.log(`📡 Received ${changeType} from Y.js - notifying ${gameStateSyncCallbacks.size} callbacks`)
+                gameStateSyncCallbacks.forEach(callback => {
+                  try {
+                    callback(gameState)
+                  } catch (error) {
+                    console.error('Error in game state sync callback:', error)
+                  }
+                })
               }
+            }
+            
+            observeGameState(yjsGameDoc, {
+              onPlayersChange: () => notifyGameStateChange('player changes'),
+              onGamePhaseChange: () => notifyGameStateChange('game phase change'),
+              onTurnChange: () => notifyGameStateChange('turn change'),
+              onDiceChange: () => notifyGameStateChange('dice state change'),
+              onCurrentPlayerChange: () => notifyGameStateChange('current player change'),
+              onSeasonChange: () => notifyGameStateChange('season change'),
+              onBoardRotation: () => notifyGameStateChange('board rotation'),
+              onError: (error) => {
+                console.error('Y.js observer error:', error)
+              }
+            })
+            
+            // Also observe the main game state map for any other changes
+            yjsGameDoc.gameState.observe(() => {
+              console.log('📡 Direct gameState map change detected')
+              notifyGameStateChange('direct gameState change')
+            })
+            
+            // Observe board changes
+            yjsGameDoc.board.observe(() => {
+              console.log('📡 Board changes detected')
+              notifyGameStateChange('board change')
+            })
+            
+            // Observe spaces changes  
+            yjsGameDoc.spaces.observe(() => {
+              console.log('📡 Spaces changes detected')
+              notifyGameStateChange('spaces change')
             })
             
             // Observe connected users (room participants) changes
@@ -489,43 +500,23 @@ export const useMultiplayerStore = create<MultiplayerStore>()(
           }
           
           try {
-            // Use structured Y.js document instead of flat map
-            const gameStateMap = yjsDoc.getMap('gameState')
-            const playersArray = yjsDoc.getArray('players')
-            const boardMap = yjsDoc.getMap('board')
+            // Create YjsGameDocument wrapper for the connected document
+            const yjsGameDoc: YjsGameDocument = {
+              doc: yjsDoc,
+              gameState: yjsDoc.getMap('gameState'),
+              players: yjsDoc.getArray('players'),
+              spaces: yjsDoc.getArray('spaces'),
+              board: yjsDoc.getMap('board'),
+              diceState: yjsDoc.getMap('diceState'),
+              gameConfig: yjsDoc.getMap('gameConfig'),
+              roomState: yjsDoc.getMap('roomState'),
+              connectedUsers: yjsDoc.getMap('connectedUsers')
+            }
             
-            // Update in transaction for atomicity
-            yjsDoc.transact(() => {
-              // Sync scalar fields directly
-              gameStateMap.set('gamePhase', gameState.gamePhase)
-              gameStateMap.set('turnPhase', gameState.turnPhase)
-              gameStateMap.set('currentPlayerIndex', gameState.currentPlayerIndex)
-              gameStateMap.set('season', gameState.season)
-              gameStateMap.set('year', gameState.year)
-              gameStateMap.set('turn', gameState.turn)
-              gameStateMap.set('energyTaxPaid', gameState.energyTaxPaid)
-              gameStateMap.set('isGameStarted', gameState.isGameStarted)
-              
-              // Remove lastUpdated - let Y.js handle conflict resolution
-              // gameStateMap.set('lastUpdated', gameState.lastUpdated)
-              
-              // Sync players using Y.Array structure
-              get().syncPlayersToYjs(playersArray, gameState.players)
-              
-              // Sync board using Y.Map structure
-              get().syncBoardToYjs(boardMap, gameState.board)
-              
-              // Sync dice state
-              if (gameState.diceState) {
-                const diceMap = new Y.Map()
-                Object.entries(gameState.diceState).forEach(([key, value]) => {
-                  diceMap.set(key, value)
-                })
-                gameStateMap.set('diceState', diceMap)
-              }
-            })
+            // Use the proper sync function from YjsDocumentStructure
+            syncStateToYjs(yjsGameDoc, gameState)
             
-            console.log('📡 Synced game state to Y.js using proper CRDT structures')
+            console.log('📡 Synced game state to Y.js using YjsDocumentStructure')
             
           } catch (error) {
             console.error('Error syncing game state:', error)
@@ -562,89 +553,6 @@ export const useMultiplayerStore = create<MultiplayerStore>()(
         
         clearError: () => {
           set({ connectionError: null })
-        },
-        
-        // Helper methods for proper Y.js integration without JSON serialization
-        reconstructGameStateFromYjs: (gameStateMap: Y.Map<any>, yjsDoc: Y.Doc): CoreGameState | null => {
-          try {
-            // Get structured data from Y.js document
-            const playersArray = yjsDoc.getArray('players')
-            const boardMap = yjsDoc.getMap('board')
-            
-            // Reconstruct players from Y.Array
-            const players: any[] = []
-            playersArray.forEach((playerData) => {
-              if (playerData && typeof playerData === 'object') {
-                players.push(playerData)
-              }
-            })
-            
-            // Reconstruct board from Y.Map
-            const board: any = {}
-            boardMap.forEach((value, key) => {
-              board[key] = value
-            })
-            
-            // Get dice state
-            const diceStateMap = gameStateMap.get('diceState')
-            let diceState: any = null
-            if (diceStateMap instanceof Y.Map) {
-              diceState = {}
-              diceStateMap.forEach((value, key) => {
-                diceState[key] = value
-              })
-            }
-            
-            return {
-              gameId: 'yjs-synced', // Will be properly set elsewhere
-              gamePhase: gameStateMap.get('gamePhase'),
-              turnPhase: gameStateMap.get('turnPhase'),
-              currentPlayerIndex: gameStateMap.get('currentPlayerIndex') || 0,
-              season: gameStateMap.get('season'),
-              year: gameStateMap.get('year') || 1,
-              turn: gameStateMap.get('turn') || 1,
-              energyTaxPaid: gameStateMap.get('energyTaxPaid') || false,
-              isGameStarted: gameStateMap.get('isGameStarted') || false,
-              players: players,
-              board: board,
-              diceState: diceState,
-              createdAt: Date.now(), // Will be properly set elsewhere
-              lastUpdated: Date.now() // Y.js handles this internally
-            } as CoreGameState
-          } catch (error) {
-            console.error('Error reconstructing game state from Y.js:', error)
-            return null
-          }
-        },
-        
-        syncPlayersToYjs: (playersArray: Y.Array<any>, players: any[]) => {
-          // Clear and rebuild players array
-          playersArray.delete(0, playersArray.length)
-          
-          players.forEach(player => {
-            // Convert player to Y.js compatible structure
-            const playerData = {
-              id: player.id,
-              name: player.name,
-              color: player.color,
-              score: player.score || 0,
-              resources: player.resources,
-              pieces: player.pieces || []
-            }
-            playersArray.push([playerData])
-          })
-        },
-        
-        syncBoardToYjs: (boardMap: Y.Map<any>, board: any) => {
-          // Clear existing board data
-          boardMap.clear()
-          
-          // Sync board data
-          if (board && typeof board === 'object') {
-            Object.entries(board).forEach(([key, value]) => {
-              boardMap.set(key, value)
-            })
-          }
         }
       }
     },
