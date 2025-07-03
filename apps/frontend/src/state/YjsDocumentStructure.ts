@@ -26,6 +26,27 @@ import type {
   TurnPhase
 } from './CoreGameState'
 
+// Re-export types for consumers
+export type { 
+  Player, 
+  GamePiece, 
+  GameSpace, 
+  GameResources,
+  DiceState,
+  GamePhase,
+  Season
+}
+
+// Helper to safely call callbacks with error handling
+const safeCall = <T extends any[]>(callback: (...args: T) => void, onError?: (error: Error) => void, ...args: T) => {
+  try {
+    callback(...args)
+  } catch (error) {
+    console.error('Error in Y.js observer callback:', error)
+    onError?.(error instanceof Error ? error : new Error(String(error)))
+  }
+}
+
 /**
  * Y.js Document Schema Definition
  * Defines the structure of our Y.js document for type safety
@@ -545,16 +566,6 @@ export function observeGameState(
 ): () => void {
   const unsubscribers: (() => void)[] = []
   
-  // Helper to safely call callbacks with error handling
-  const safeCall = <T extends any[]>(callback: (...args: T) => void, ...args: T) => {
-    try {
-      callback(...args)
-    } catch (error) {
-      console.error('Error in Y.js observer callback:', error)
-      callbacks.onError?.(error instanceof Error ? error : new Error(String(error)))
-    }
-  }
-  
   // Observe players array with deep observation
   if (callbacks.onPlayersChange || callbacks.onPlayerResourceChange) {
     const observer = (event: Y.YArrayEvent<Y.Map<any>>) => {
@@ -566,7 +577,7 @@ export function observeGameState(
             players.push(yjsToPlayer(playerMap))
           }
         })
-        safeCall(callbacks.onPlayersChange, players)
+        safeCall(callbacks.onPlayersChange, callbacks.onError, players)
       }
       
       // Deep observe for resource changes
@@ -585,7 +596,9 @@ export function observeGameState(
                     honey: resourcesMap.get('honey') || 0,
                     bearMeat: resourcesMap.get('bearMeat') || 0
                   }
-                  safeCall(callbacks.onPlayerResourceChange!, playerId, resources)
+                  if (callbacks.onPlayerResourceChange) {
+                    callbacks.onPlayerResourceChange(playerId, resources)
+                  }
                 }
                 resourcesMap.observe(resourceObserver)
                 unsubscribers.push(() => resourcesMap.unobserve(resourceObserver))
@@ -597,7 +610,7 @@ export function observeGameState(
     }
     yjsDoc.players.observe((event, transaction) => {
       if (transaction.local) return // Skip local changes to prevent loops
-      observer(event, transaction)
+      observer(event)
     })
     unsubscribers.push(() => yjsDoc.players.unobserve(observer))
   }
@@ -610,22 +623,22 @@ export function observeGameState(
           switch (key) {
             case 'gamePhase':
               if (callbacks.onGamePhaseChange) {
-                safeCall(callbacks.onGamePhaseChange, yjsDoc.gameState.get('gamePhase'))
+                safeCall(callbacks.onGamePhaseChange, callbacks.onError, yjsDoc.gameState.get('gamePhase'))
               }
               break
             case 'turn':
               if (callbacks.onTurnChange) {
-                safeCall(callbacks.onTurnChange, yjsDoc.gameState.get('turn'))
+                safeCall(callbacks.onTurnChange, callbacks.onError, yjsDoc.gameState.get('turn'))
               }
               break
             case 'season':
               if (callbacks.onSeasonChange) {
-                safeCall(callbacks.onSeasonChange, yjsDoc.gameState.get('season'))
+                safeCall(callbacks.onSeasonChange, callbacks.onError, yjsDoc.gameState.get('season'))
               }
               break
             case 'currentPlayerIndex':
               if (callbacks.onCurrentPlayerChange) {
-                safeCall(callbacks.onCurrentPlayerChange, yjsDoc.gameState.get('currentPlayerIndex'))
+                safeCall(callbacks.onCurrentPlayerChange, callbacks.onError, yjsDoc.gameState.get('currentPlayerIndex'))
               }
               break
           }
@@ -634,7 +647,7 @@ export function observeGameState(
     }
     yjsDoc.gameState.observe((event, transaction) => {
       if (transaction.local) return // Skip local changes to prevent loops
-      observer(event, transaction)
+      observer(event)
     })
     unsubscribers.push(() => yjsDoc.gameState.unobserve(observer))
   }
@@ -667,7 +680,7 @@ export function observeGameState(
             if (callbacks.onSpaceChange && 
                 (prevSpace.piece?.id !== space.piece?.id || 
                  prevSpace.canProduce !== space.canProduce)) {
-              safeCall(callbacks.onSpaceChange, space.id, space)
+              safeCall(callbacks.onSpaceChange, callbacks.onError, space.id, space)
             }
             
             // Piece movement detection
@@ -678,14 +691,16 @@ export function observeGameState(
                 // Find where it went
                 currentSpaceStates.forEach((otherSpace, otherSpaceId) => {
                   if (otherSpace.piece?.id === movedPiece.id && otherSpaceId !== space.id) {
-                    safeCall(callbacks.onPieceMove, movedPiece.id, space.id, otherSpaceId)
+                    if (callbacks.onPieceMove) {
+                      safeCall(callbacks.onPieceMove, callbacks.onError, movedPiece.id, space.id, otherSpaceId)
+                    }
                   }
                 })
               }
             }
           } else if (callbacks.onSpaceChange) {
             // New space
-            safeCall(callbacks.onSpaceChange, space.id, space)
+            safeCall(callbacks.onSpaceChange, callbacks.onError, space.id, space)
           }
         }
       })
@@ -695,7 +710,7 @@ export function observeGameState(
     
     yjsDoc.spaces.observe((event, transaction) => {
       if (transaction.local) return // Skip local changes to prevent loops
-      observer(event, transaction)
+      observer()
     })
     unsubscribers.push(() => yjsDoc.spaces.unobserve(observer))
   }
@@ -703,11 +718,13 @@ export function observeGameState(
   // Observe dice state
   if (callbacks.onDiceChange) {
     const observer = () => {
-      safeCall(callbacks.onDiceChange, yjsToDiceState(yjsDoc.diceState))
+      if (callbacks.onDiceChange) {
+        safeCall(callbacks.onDiceChange, callbacks.onError, yjsToDiceState(yjsDoc.diceState))
+      }
     }
     yjsDoc.diceState.observe((event, transaction) => {
       if (transaction.local) return // Skip local changes to prevent loops
-      observer(event, transaction)
+      observer()
     })
     unsubscribers.push(() => yjsDoc.diceState.unobserve(observer))
   }
@@ -717,7 +734,9 @@ export function observeGameState(
     const rotationsArray = yjsDoc.board.get('rotations') as Y.Array<number>
     if (rotationsArray) {
       const observer = () => {
-        safeCall(callbacks.onBoardRotation, rotationsArray.toArray())
+        if (callbacks.onBoardRotation) {
+          safeCall(callbacks.onBoardRotation, callbacks.onError, rotationsArray.toArray())
+        }
       }
       rotationsArray.observe(observer)
       unsubscribers.push(() => rotationsArray.unobserve(observer))
@@ -751,14 +770,6 @@ export function observePlayer(
 ): () => void {
   const unsubscribers: (() => void)[] = []
   
-  const safeCall = <T extends any[]>(callback: (...args: T) => void, ...args: T) => {
-    try {
-      callback(...args)
-    } catch (error) {
-      console.error('Error in player observer callback:', error)
-      callbacks.onError?.(error instanceof Error ? error : new Error(String(error)))
-    }
-  }
   
   // Find and observe the specific player
   const findAndObservePlayer = () => {
@@ -776,7 +787,9 @@ export function observePlayer(
                 honey: resourcesMap.get('honey') || 0,
                 bearMeat: resourcesMap.get('bearMeat') || 0
               }
-              safeCall(callbacks.onResourceChange!, resources)
+              if (callbacks.onResourceChange) {
+                safeCall(callbacks.onResourceChange, callbacks.onError, resources)
+              }
             }
             resourcesMap.observe(observer)
             unsubscribers.push(() => resourcesMap.unobserve(observer))
@@ -794,7 +807,9 @@ export function observePlayer(
                   pieces.push(yjsToPiece(pieceMap))
                 }
               })
-              safeCall(callbacks.onPieceChange!, pieces)
+              if (callbacks.onPieceChange) {
+                safeCall(callbacks.onPieceChange, callbacks.onError, pieces)
+              }
             }
             piecesArray.observe(observer)
             unsubscribers.push(() => piecesArray.unobserve(observer))
@@ -806,7 +821,9 @@ export function observePlayer(
           const observer = (event: Y.YMapEvent<any>) => {
             event.changes.keys.forEach((change, key) => {
               if (key === 'score' && change.action === 'update') {
-                safeCall(callbacks.onScoreChange!, playerMap.get('score') || 0)
+                if (callbacks.onScoreChange) {
+                  safeCall(callbacks.onScoreChange, callbacks.onError, playerMap.get('score') || 0)
+                }
               }
             })
           }
@@ -851,14 +868,6 @@ export function observeSpace(
 ): () => void {
   const unsubscribers: (() => void)[] = []
   
-  const safeCall = <T extends any[]>(callback: (...args: T) => void, ...args: T) => {
-    try {
-      callback(...args)
-    } catch (error) {
-      console.error('Error in space observer callback:', error)
-      callbacks.onError?.(error instanceof Error ? error : new Error(String(error)))
-    }
-  }
   
   // Find and observe the specific space
   const findAndObserveSpace = () => {
@@ -872,17 +881,17 @@ export function observeSpace(
                   if (callbacks.onPieceChange) {
                     const pieceMap = spaceMap.get('piece') as Y.Map<any> | null
                     const piece = pieceMap ? yjsToPiece(pieceMap) : null
-                    safeCall(callbacks.onPieceChange, piece)
+                    safeCall(callbacks.onPieceChange, callbacks.onError, piece)
                   }
                   break
                 case 'canProduce':
                   if (callbacks.onProductionChange) {
-                    safeCall(callbacks.onProductionChange, spaceMap.get('canProduce'))
+                    safeCall(callbacks.onProductionChange, callbacks.onError, spaceMap.get('canProduce'))
                   }
                   break
                 case 'hasHoney':
                   if (callbacks.onHoneyChange) {
-                    safeCall(callbacks.onHoneyChange, spaceMap.get('hasHoney') || false)
+                    safeCall(callbacks.onHoneyChange, callbacks.onError, spaceMap.get('hasHoney') || false)
                   }
                   break
               }

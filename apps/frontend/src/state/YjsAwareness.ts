@@ -11,8 +11,9 @@
  * - Collaborative editing awareness
  */
 
-import { Awareness } from 'y-protocols/awareness'
 import { WebsocketProvider } from 'y-websocket'
+// @ts-expect-error - Y.js awareness types not fully typed
+import { Awareness } from 'y-protocols/awareness.js'
 import * as Y from 'yjs'
 import { useState, useEffect, useCallback } from 'react'
 

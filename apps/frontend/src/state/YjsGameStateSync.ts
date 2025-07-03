@@ -8,7 +8,6 @@
  * 4. Direct Y.js type mapping for automatic merging
  */
 
-import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import {
   YjsGameDocument,
@@ -17,7 +16,12 @@ import {
   syncStateToYjs,
   yjsToGameState,
   validateYjsDocument,
-  observeGameState
+  observeGameState,
+  updatePlayerResources,
+  movePiece,
+  advanceTurn,
+  updateDiceState,
+  GameResources
 } from './YjsDocumentStructure'
 import type { CoreGameState } from './CoreGameState'
 
@@ -152,7 +156,6 @@ export class YjsGameStateSync {
    * Update player resources only (atomic operation)
    */
   updatePlayerResources(playerId: string, resources: Partial<GameResources>): boolean {
-    const { updatePlayerResources } = require('./YjsDocumentStructure')
     return updatePlayerResources(this.yjsDoc, playerId, resources)
   }
   
@@ -160,7 +163,6 @@ export class YjsGameStateSync {
    * Move a piece atomically
    */
   movePiece(pieceId: string, fromSpaceId: string, toSpaceId: string): boolean {
-    const { movePiece } = require('./YjsDocumentStructure')
     return movePiece(this.yjsDoc, pieceId, fromSpaceId, toSpaceId)
   }
   
@@ -175,7 +177,6 @@ export class YjsGameStateSync {
     gamePhase?: any
     energyTaxPaid?: boolean
   }): void {
-    const { advanceTurn } = require('./YjsDocumentStructure')
     advanceTurn(this.yjsDoc, updates)
   }
   
@@ -188,7 +189,6 @@ export class YjsGameStateSync {
     directionRolls?: any
     rotations?: number[]
   }): void {
-    const { updateDiceState } = require('./YjsDocumentStructure')
     updateDiceState(this.yjsDoc, updates)
   }
   
