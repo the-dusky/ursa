@@ -31,6 +31,12 @@ export function useStateCoordinator() {
   useEffect(() => {
     if (!isConnected || isUpdatingFromMultiplayer.current) return
     
+    // Only sync if we have a valid game state with players and board
+    if (!gameState.players || gameState.players.length === 0 || !gameState.board || !gameState.board.rings) {
+      console.log('🔄 Skipping sync - game state not fully initialized yet')
+      return
+    }
+    
     console.log('🔄 Syncing local game state to multiplayer')
     syncGameState(gameState)
   }, [gameState, isConnected, syncGameState])

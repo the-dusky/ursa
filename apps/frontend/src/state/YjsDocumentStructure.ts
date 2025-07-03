@@ -296,6 +296,12 @@ export function yjsToSpace(spaceMap: Y.Map<any>): GameSpace {
  * Sync CoreGameState to Y.js document
  */
 export function syncStateToYjs(yjsDoc: YjsGameDocument, state: CoreGameState): void {
+  // Validate state before syncing
+  if (!state || !state.players || !state.board || !state.board.rings) {
+    console.warn('Invalid game state for Y.js sync:', state)
+    return
+  }
+  
   yjsDoc.doc.transact(() => {
     // Update scalar fields
     yjsDoc.gameState.set('gameId', state.gameId)
