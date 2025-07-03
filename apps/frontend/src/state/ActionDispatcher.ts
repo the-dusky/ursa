@@ -13,6 +13,78 @@ import { CoreGameState, GameActionResult, CoreGameStateUtils, GamePhase, TurnPha
 import { StateManager } from './StateManager'
 
 /**
+ * Winter Survival Constants
+ */
+const ENERGY_CONSTANTS = {
+  MAX_ENERGY: 20,
+  MAX_FAT: 100, // Allow high fat accumulation for winter prep
+  FAT_TO_ENERGY_RATIO: 2, // 2 fat = 1 energy
+  STARTING_ENERGY: 20,
+  HIBERNATION_RESET_ENERGY: 5,
+  WINTER_COST_MOUNTAINS: 2, // Energy per turn in mountains during winter
+  WINTER_COST_OUTSIDE: 5,   // Energy per turn outside mountains during winter
+  NORMAL_SEASON_COST: 1     // Energy per turn in non-winter seasons
+} as const
+
+/**
+ * Seasonal Constants
+ */
+const SEASON_CONSTANTS = {
+  TURNS_PER_SEASON: 5,
+  SEASONS: ['Spring', 'Summer', 'Autumn', 'Winter'] as const
+} as const
+
+/**
+ * Convert fat to energy when needed for survival
+ * @param currentEnergy Current energy level
+ * @param currentFat Current fat reserves  
+ * @param energyNeeded Energy required
+ * @returns Object with new energy and fat levels, plus success flag
+ */
+function convertFatToEnergy(currentEnergy: number, currentFat: number, energyNeeded: number) {
+  const totalAvailableEnergy = currentEnergy
+  const energyShortfall = energyNeeded - totalAvailableEnergy
+  
+  if (energyShortfall <= 0) {
+    // No conversion needed
+    return {
+      newEnergy: currentEnergy,
+      newFat: currentFat,
+      energyUsed: Math.min(energyNeeded, currentEnergy),
+      fatUsed: 0,
+      canAfford: true
+    }
+  }
+  
+  // Calculate fat needed (2 fat = 1 energy)
+  const fatNeeded = energyShortfall * ENERGY_CONSTANTS.FAT_TO_ENERGY_RATIO
+  
+  if (currentFat < fatNeeded) {
+    // Cannot afford even with fat conversion
+    return {
+      newEnergy: currentEnergy,
+      newFat: currentFat,
+      energyUsed: 0,
+      fatUsed: 0,
+      canAfford: false
+    }
+  }
+  
+  // Convert fat to energy and pay the cost
+  const energyFromFat = energyShortfall
+  const newEnergy = Math.min(currentEnergy + energyFromFat - energyNeeded, ENERGY_CONSTANTS.MAX_ENERGY)
+  const newFat = currentFat - fatNeeded
+  
+  return {
+    newEnergy,
+    newFat,
+    energyUsed: energyNeeded,
+    fatUsed: fatNeeded,
+    canAfford: true
+  }
+}
+
+/**
  * Base Action Interface - All actions implement this
  */
 export interface GameAction {
@@ -60,6 +132,7 @@ export interface EatResourceAction extends GameAction {
   pieceId: string
   resourceType: 'grains' | 'berries' | 'salmon' | 'honey' | 'bearMeat'
   amount: number
+  conversionType: 'energy' | 'fat'
   playerId: string
 }
 
@@ -72,6 +145,13 @@ export interface AdvanceTurnAction extends GameAction {
 
 export interface AdvancePhaseAction extends GameAction {
   type: 'ADVANCE_PHASE'
+}
+
+/**
+ * Seasonal advancement action
+ */
+export interface AdvanceSeasonAction extends GameAction {
+  type: 'ADVANCE_SEASON'
 }
 
 /**
@@ -171,6 +251,7 @@ export type AnyGameAction =
   | EatResourceAction
   | AdvanceTurnAction
   | AdvancePhaseAction
+  | AdvanceSeasonAction
   | RollDiceAction
   | ApplyBoardRotationsAction
   | ResetDiceAction
@@ -648,14 +729,65 @@ export class ActionDispatcher {
         return { success: false, state, error: 'Piece not found' }
       }
       
-      // Simple eating logic
-      if (piece.resources[action.resourceType] >= action.amount) {
-        piece.resources[action.resourceType] -= action.amount
-        piece.energy += action.amount
-        return { success: true, state: newState, newState, message: `Piece ate ${action.amount} ${action.resourceType}` }
+      // Check if player has enough resources
+      if (piece.resources[action.resourceType] < action.amount) {
+        return { success: false, state, error: 'Not enough resources' }
       }
       
-      return { success: false, state, error: 'Not enough resources' }
+      // Calculate conversion based on type
+      let energyGain = 0
+      let fatGain = 0
+      let maxValue = 0
+      let currentValue = 0
+      
+      if (action.conversionType === 'energy') {
+        energyGain = action.amount
+        maxValue = ENERGY_CONSTANTS.MAX_ENERGY
+        currentValue = piece.energy
+      } else {
+        fatGain = action.amount
+        maxValue = ENERGY_CONSTANTS.MAX_FAT
+        currentValue = piece.fat
+      }
+      
+      // Check if we exceed maximum
+      if (currentValue + (energyGain || fatGain) > maxValue) {
+        return { 
+          success: false, 
+          state, 
+          error: `Cannot exceed maximum ${action.conversionType}: ${currentValue}/${maxValue} (trying to add ${energyGain || fatGain})` 
+        }
+      }
+      
+      // Apply the conversion
+      const updatedPlayers = state.players.map(p => 
+        p.id === action.playerId 
+          ? {
+              ...p,
+              pieces: p.pieces.map(playerPiece => 
+                playerPiece.id === action.pieceId
+                  ? { 
+                      ...playerPiece,
+                      resources: {
+                        ...playerPiece.resources,
+                        [action.resourceType]: playerPiece.resources[action.resourceType] - action.amount
+                      },
+                      energy: Math.min(playerPiece.energy + energyGain, ENERGY_CONSTANTS.MAX_ENERGY),
+                      fat: Math.min(playerPiece.fat + fatGain, ENERGY_CONSTANTS.MAX_FAT)
+                    }
+                  : playerPiece
+              )
+            }
+          : p
+      )
+      
+      const updatedNewState = { ...newState, players: updatedPlayers }
+      return { 
+        success: true, 
+        state: updatedNewState, 
+        newState: updatedNewState, 
+        message: `Piece ate ${action.amount} ${action.resourceType} and gained ${energyGain || fatGain} ${action.conversionType}` 
+      }
     })
     
     this.registerHandler('ADVANCE_TURN', (state) => {
@@ -722,7 +854,23 @@ export class ActionDispatcher {
         lastUpdated: Date.now()
       }
       
-      return { success: true, state: newState, newState, message: `Advanced to turn ${newState.turn}` }
+      // Check if we need to advance season after TURNS_PER_SEASON turns
+      const shouldAdvanceSeason = newState.turn % SEASON_CONSTANTS.TURNS_PER_SEASON === 0
+      let message = `Advanced to turn ${newState.turn}`
+      
+      if (shouldAdvanceSeason) {
+        // Auto-advance season
+        const seasonHandler = this.handlers.get('ADVANCE_SEASON')
+        if (seasonHandler) {
+          const seasonResult = seasonHandler(newState, { type: 'ADVANCE_SEASON', timestamp: Date.now() })
+          if (seasonResult.success) {
+            message += ` - ${seasonResult.message}`
+            return { success: true, state: seasonResult.state, newState: seasonResult.newState, message }
+          }
+        }
+      }
+      
+      return { success: true, state: newState, newState, message }
     })
     
     this.registerHandler('ADVANCE_PHASE', (state) => {
@@ -737,6 +885,33 @@ export class ActionDispatcher {
       }
       
       return { success: true, state: newState, newState, message: `Advanced to ${newState.turnPhase} phase` }
+    })
+    
+    this.registerHandler('ADVANCE_SEASON', (state) => {
+      const seasons = SEASON_CONSTANTS.SEASONS
+      const currentSeasonIndex = seasons.indexOf(state.season)
+      const nextSeasonIndex = (currentSeasonIndex + 1) % seasons.length
+      const nextSeason = seasons[nextSeasonIndex]
+      
+      // Advance year when transitioning from Winter back to Spring
+      const newYear = (state.season === 'Winter' && nextSeason === 'Spring') 
+        ? state.year + 1 
+        : state.year
+      
+      const newState = { 
+        ...state, 
+        season: nextSeason,
+        year: newYear,
+        lastUpdated: Date.now()
+      }
+      
+      const yearMessage = newYear > state.year ? ` (Year ${newYear})` : ''
+      return { 
+        success: true, 
+        state: newState, 
+        newState, 
+        message: `Season advanced to ${nextSeason}${yearMessage}` 
+      }
     })
     
     this.registerHandler('ROLL_DICE', (state, action) => {
@@ -891,7 +1066,7 @@ export class ActionDispatcher {
         spaceId,
         type: 'bear' as const,
         health: 100,
-        energy: 5,
+        energy: ENERGY_CONSTANTS.STARTING_ENERGY,
         fat: 0,
         emergencyEnergy: 0,
         isHibernating: false,
@@ -986,21 +1161,21 @@ export class ActionDispatcher {
       
       // Calculate energy tax cost based on season and location
       const space = CoreGameStateUtils.getSpace(state, piece.spaceId)
-      let energyTaxCost = 1 // Base cost
+      let energyTaxCost = ENERGY_CONSTANTS.NORMAL_SEASON_COST // Base cost for normal seasons
       
       if (state.season === 'Winter') {
         if (space?.quadrant === 'Mountains') {
-          energyTaxCost = 1 // Mountains provide shelter in winter
+          energyTaxCost = ENERGY_CONSTANTS.WINTER_COST_MOUNTAINS // Mountains provide shelter in winter
         } else {
-          energyTaxCost = 2 // Higher cost outside mountains in winter
+          energyTaxCost = ENERGY_CONSTANTS.WINTER_COST_OUTSIDE // Harsh survival outside mountains in winter
         }
       }
       
-      const totalEnergy = piece.energy + piece.emergencyEnergy
+      // Try to pay energy tax with automatic fat conversion if needed
+      const conversionResult = convertFatToEnergy(piece.energy, piece.fat, energyTaxCost)
       
-      // Check if bear can pay the tax - if not, they die
-      if (totalEnergy < energyTaxCost) {
-        // Trigger death action
+      if (!conversionResult.canAfford) {
+        // Bear cannot afford the energy tax even with fat conversion - death
         const deathAction: DeathAction = {
           type: 'DEATH',
           pieceId,
@@ -1018,28 +1193,26 @@ export class ActionDispatcher {
               success: true,
               state: deathResult.state,
               newState: deathResult.newState,
-              message: `${player.name}'s bear starved to death (insufficient energy for daily tax: needed ${energyTaxCost}, had ${totalEnergy})`
+              message: `${player.name}'s bear starved to death (insufficient energy and fat for daily tax: needed ${energyTaxCost}, had ${piece.energy} energy + ${piece.fat} fat)`
             }
           }
         }
         
-        return { success: false, state, error: `Bear died of starvation: needed ${energyTaxCost} energy, had ${totalEnergy}` }
+        return { success: false, state, error: `Bear died of starvation: needed ${energyTaxCost} energy, had ${piece.energy} energy + ${piece.fat} fat` }
       }
       
-      // Apply energy cost (use regular energy first, then emergency energy)
-      let newEnergy = piece.energy
-      let newEmergencyEnergy = piece.emergencyEnergy
+      // Apply energy cost using the conversion result
+      const newEnergy = conversionResult.newEnergy
+      const newFat = conversionResult.newFat
+      const fatUsed = conversionResult.fatUsed
       
-      if (piece.energy >= energyTaxCost) {
-        newEnergy -= energyTaxCost
-      } else {
-        const regularUsed = piece.energy
-        const emergencyUsed = energyTaxCost - regularUsed
-        newEnergy = 0
-        newEmergencyEnergy -= emergencyUsed
+      // Build success message
+      let taxMessage = `${player.name}'s bear paid ${energyTaxCost} energy tax`
+      if (fatUsed > 0) {
+        taxMessage += ` (converted ${fatUsed} fat to ${conversionResult.fatUsed / ENERGY_CONSTANTS.FAT_TO_ENERGY_RATIO} energy)`
       }
       
-      // Update the piece's energy
+      // Update the piece's energy and fat
       const updatedPlayers = state.players.map(p => 
         p.id === playerId 
           ? {
@@ -1049,7 +1222,7 @@ export class ActionDispatcher {
                   ? { 
                       ...playerPiece, 
                       energy: newEnergy,
-                      emergencyEnergy: newEmergencyEnergy
+                      fat: newFat
                     }
                   : playerPiece
               )
@@ -1077,15 +1250,11 @@ export class ActionDispatcher {
         lastUpdated: Date.now()
       }
       
-      const energyTypeUsed = piece.energy >= energyTaxCost ? 'energy' : 
-        piece.energy > 0 ? `${piece.energy} energy + ${energyTaxCost - piece.energy} emergency energy` : 
-        'emergency energy'
-      
       return { 
         success: true, 
         state: newState, 
         newState, 
-        message: `${player.name} paid ${energyTaxCost} daily ${energyTypeUsed} tax` 
+        message: taxMessage
       }
     })
     
@@ -1263,6 +1432,9 @@ export class ActionDispatcher {
         return { success: false, state, error: `Need ${fatCostToHibernate} fat to hibernate, have ${piece.fat}` }
       }
       
+      // Calculate remaining fat after hibernation cost
+      const remainingFat = piece.fat - fatCostToHibernate
+      
       // Update the piece for hibernation
       const updatedPlayers = state.players.map(p => 
         p.id === playerId 
@@ -1273,8 +1445,8 @@ export class ActionDispatcher {
                   ? { 
                       ...playerPiece, 
                       isHibernating: true,
-                      energy: 5, // Reset to starting energy
-                      fat: 0, // Consume all fat
+                      energy: ENERGY_CONSTANTS.HIBERNATION_RESET_ENERGY, // Reset to hibernation energy level
+                      fat: remainingFat, // Keep remaining fat for survival
                       emergencyEnergy: 0, // Clear emergency energy
                       resources: { // Clear all resources
                         grains: 0,
@@ -1313,7 +1485,7 @@ export class ActionDispatcher {
         success: true, 
         state: newState, 
         newState, 
-        message: `${player.name}'s bear entered hibernation (consumed ${fatCostToHibernate} fat, reset to 5 energy)` 
+        message: `${player.name}'s bear entered hibernation (consumed ${fatCostToHibernate} fat, reset to ${ENERGY_CONSTANTS.HIBERNATION_RESET_ENERGY} energy, ${remainingFat} fat remaining)` 
       }
     })
     
@@ -1620,6 +1792,7 @@ export const ActionCreators = {
     pieceId: string, 
     resourceType: 'grains' | 'berries' | 'salmon' | 'honey' | 'bearMeat',
     amount: number,
+    conversionType: 'energy' | 'fat',
     playerId: string
   ): EatResourceAction {
     return {
@@ -1627,6 +1800,7 @@ export const ActionCreators = {
       pieceId,
       resourceType,
       amount,
+      conversionType,
       playerId
     }
   },
@@ -1637,6 +1811,10 @@ export const ActionCreators = {
   
   advancePhase(): AdvancePhaseAction {
     return { type: 'ADVANCE_PHASE' }
+  },
+  
+  advanceSeason(): AdvanceSeasonAction {
+    return { type: 'ADVANCE_SEASON' }
   },
   
   rollDice(diceType: 'position' | 'direction'): RollDiceAction {
