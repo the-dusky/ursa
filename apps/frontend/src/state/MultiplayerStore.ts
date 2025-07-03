@@ -202,24 +202,22 @@ export const useMultiplayerStore = create<MultiplayerStore>()(
               })
             })
             
-            // Set up Y.js observers
-            const playersMap = yjsDoc.getMap('players')
-            const gameStateMap = yjsDoc.getMap('gameState')
-            const roomConfigMap = yjsDoc.getMap('roomConfig')
+            // Use the proper Y.js document structure from YjsDocumentStructure
+            const yjsGameDoc = createYjsDocument()
+            // Replace the document instance with our connected one
+            yjsGameDoc.doc = yjsDoc
+            // Recreate the structure with the connected document
+            yjsGameDoc.gameState = yjsDoc.getMap('gameState')
+            yjsGameDoc.players = yjsDoc.getArray('players')
+            yjsGameDoc.spaces = yjsDoc.getArray('spaces')
+            yjsGameDoc.board = yjsDoc.getMap('board')
+            yjsGameDoc.diceState = yjsDoc.getMap('diceState')
+            yjsGameDoc.gameConfig = yjsDoc.getMap('gameConfig')
+            yjsGameDoc.roomState = yjsDoc.getMap('roomState')
+            yjsGameDoc.connectedUsers = yjsDoc.getMap('connectedUsers')
             
-            // Observe game state changes using proper Y.js document structure
-            // Create a proper Y.js document wrapper for observation
-            const yjsGameDoc: YjsGameDocument = {
-              doc: yjsDoc,
-              gameState: gameStateMap,
-              players: yjsDoc.getArray('players'),
-              spaces: yjsDoc.getArray('spaces'),
-              board: yjsDoc.getMap('board'),
-              diceState: yjsDoc.getMap('diceState'),
-              gameConfig: yjsDoc.getMap('gameConfig'),
-              roomState: roomConfigMap,
-              connectedUsers: playersMap
-            }
+            // Initialize the document structure properly
+            initializeYjsDocument(yjsGameDoc)
             
             // Set up proper granular observers
             observeGameState(yjsGameDoc, {
@@ -251,12 +249,12 @@ export const useMultiplayerStore = create<MultiplayerStore>()(
               }
             })
             
-            // Observe players changes - reconstruct from Y.js without JSON
-            playersMap.observe(() => {
+            // Observe connected users (room participants) changes
+            yjsGameDoc.connectedUsers.observe(() => {
               const allPlayers: { [playerId: string]: ConnectedPlayer } = {}
               
               // Iterate through Y.Map entries directly
-              playersMap.forEach((player, playerId) => {
+              yjsGameDoc.connectedUsers.forEach((player, playerId) => {
                 if (typeof player === 'object' && player !== null) {
                   allPlayers[playerId] = player as ConnectedPlayer
                 }
@@ -267,13 +265,13 @@ export const useMultiplayerStore = create<MultiplayerStore>()(
             })
             
             // Observe room config changes - reconstruct from Y.js without JSON
-            roomConfigMap.observe(() => {
-              const playerCount = roomConfigMap.get('playerCount')
-              const gameStarted = roomConfigMap.get('gameStarted')
-              const startedAt = roomConfigMap.get('startedAt')
-              const createdBy = roomConfigMap.get('createdBy')
-              const createdAt = roomConfigMap.get('createdAt')
-              const playerSlots = roomConfigMap.get('playerSlots')
+            yjsGameDoc.roomState.observe(() => {
+              const playerCount = yjsGameDoc.roomState.get('playerCount')
+              const gameStarted = yjsGameDoc.roomState.get('gameStarted')
+              const startedAt = yjsGameDoc.roomState.get('startedAt')
+              const createdBy = yjsGameDoc.roomState.get('createdBy')
+              const createdAt = yjsGameDoc.roomState.get('createdAt')
+              const playerSlots = yjsGameDoc.roomState.get('playerSlots')
               
               const config: RoomConfig = {
                 playerCount: typeof playerCount === 'number' ? playerCount : 2,
@@ -290,9 +288,9 @@ export const useMultiplayerStore = create<MultiplayerStore>()(
             
             // Register this player - count existing players without toJSON()
             let playerCount = 0
-            playersMap.forEach(() => playerCount++)
+            yjsGameDoc.connectedUsers.forEach(() => playerCount++)
             const playerNumber = playerCount + 1
-            playersMap.set(playerId, {
+            yjsGameDoc.connectedUsers.set(playerId, {
               id: playerId,
               name: playerName,
               playerNumber,
@@ -343,10 +341,10 @@ export const useMultiplayerStore = create<MultiplayerStore>()(
           // Mark player as inactive
           if (yjsDoc && playerId) {
             try {
-              const playersMap = yjsDoc.getMap('players')
-              const player = playersMap.get(playerId)
+              const connectedUsers = yjsDoc.getMap('connectedUsers')
+              const player = connectedUsers.get(playerId)
               if (player) {
-                playersMap.set(playerId, { ...player, isActive: false })
+                connectedUsers.set(playerId, { ...player, isActive: false })
               }
             } catch (error) {
               console.warn('Error marking player inactive:', error)
@@ -398,11 +396,11 @@ export const useMultiplayerStore = create<MultiplayerStore>()(
           // Set room configuration
           const { yjsDoc } = get()
           if (yjsDoc) {
-            const roomConfigMap = yjsDoc.getMap('roomConfig')
-            roomConfigMap.set('playerCount', playerCount)
-            roomConfigMap.set('gameStarted', false)
-            roomConfigMap.set('createdBy', creatorId)
-            roomConfigMap.set('createdAt', Date.now())
+            const roomState = yjsDoc.getMap('roomState')
+            roomState.set('playerCount', playerCount)
+            roomState.set('gameStarted', false)
+            roomState.set('createdBy', creatorId)
+            roomState.set('createdAt', Date.now())
           }
           
           console.log(`✅ Room ${roomId} created for ${playerCount} players`)
@@ -442,12 +440,12 @@ export const useMultiplayerStore = create<MultiplayerStore>()(
           // Set room configuration with player slots
           const { yjsDoc } = get()
           if (yjsDoc) {
-            const roomConfigMap = yjsDoc.getMap('roomConfig')
-            roomConfigMap.set('playerCount', playerCount)
-            roomConfigMap.set('gameStarted', false)
-            roomConfigMap.set('createdBy', creatorId)
-            roomConfigMap.set('createdAt', Date.now())
-            roomConfigMap.set('playerSlots', playerSlots)
+            const roomState = yjsDoc.getMap('roomState')
+            roomState.set('playerCount', playerCount)
+            roomState.set('gameStarted', false)
+            roomState.set('createdBy', creatorId)
+            roomState.set('createdAt', Date.now())
+            roomState.set('playerSlots', playerSlots)
             
             console.log(`✅ Room config stored in Y.js with ${playerCount} slots`)
           }
@@ -465,9 +463,9 @@ export const useMultiplayerStore = create<MultiplayerStore>()(
           
           console.log('🎮 Starting game in room')
           
-          const roomConfigMap = yjsDoc.getMap('roomConfig')
-          roomConfigMap.set('gameStarted', true)
-          roomConfigMap.set('startedAt', Date.now())
+          const roomState = yjsDoc.getMap('roomState')
+          roomState.set('gameStarted', true)
+          roomState.set('startedAt', Date.now())
           
           console.log('✅ Game started in room')
         },
@@ -552,10 +550,10 @@ export const useMultiplayerStore = create<MultiplayerStore>()(
           }
           
           try {
-            const playersMap = yjsDoc.getMap('players')
-            const player = playersMap.get(playerId)
+            const connectedUsers = yjsDoc.getMap('connectedUsers')
+            const player = connectedUsers.get(playerId)
             if (player) {
-              playersMap.set(playerId, { ...player, isActive })
+              connectedUsers.set(playerId, { ...player, isActive })
             }
           } catch (error) {
             console.error('Error updating player status:', error)
