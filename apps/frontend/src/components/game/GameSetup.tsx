@@ -154,13 +154,23 @@ export function GameSetup() {
 
   // Watch for game start in multiplayer rooms
   useEffect(() => {
-    // If we're in a multiplayer room and the game has been started by another player
-    if (isConnected && roomConfig?.gameStarted && !gameState.isGameStarted) {
-      console.log('🎮 Game started by room creator, waiting for game state sync via Y.js')
-      // The game state will be synced via Y.js automatically
-      // The StateCoordinator will handle updating our local state
+    // If we're in a multiplayer room and the game has been started
+    if (isConnected && roomConfig?.gameStarted && gameState.players.length === 0) {
+      console.log('🎮 Game started in multiplayer room - initializing local game state')
+      
+      const roomPlayerCount = Object.values(connectedPlayers).filter(p => p.isActive).length
+      const targetPlayerCount = roomConfig?.playerCount || roomPlayerCount || 2
+      
+      console.log(`🎯 Initializing game for ${targetPlayerCount} players`)
+      
+      // Initialize game state locally - this will sync to other players via StateCoordinator
+      gameActions.initializeGame(targetPlayerCount).then(() => {
+        console.log('✅ Local game state initialized for multiplayer game')
+      }).catch(error => {
+        console.error('❌ Failed to initialize multiplayer game:', error)
+      })
     }
-  }, [isConnected, roomConfig?.gameStarted, gameState.isGameStarted])
+  }, [isConnected, roomConfig?.gameStarted, gameState.players.length, connectedPlayers, roomConfig?.playerCount, gameActions])
 
   const handleStartLocalGame = async () => {
     if (selectedPlayerCount === 1) {
@@ -389,15 +399,12 @@ export function GameSetup() {
                             onClick={async () => {
                               try {
                                 console.log('🎮 Player 1 starting multiplayer game...')
-                                // Initialize the game state locally (StateCoordinator will sync automatically)
-                                await gameActions.initializeGame(actualRoomSize)
-                                console.log('✅ Local game state initialized')
                                 
-                                // Notify other players that the game has started
+                                // Mark the room as started (this will sync to all players via Y.js)
                                 await startGameInRoom()
-                                console.log('✅ Room marked as game started')
+                                console.log('✅ Room marked as game started - all players will be notified via Y.js')
                                 
-                                console.log('🔄 StateCoordinator will handle automatic sync to Y.js')
+                                // The useEffect below will handle game initialization for all players
                               } catch (error) {
                                 console.error('Failed to start game:', error)
                               }

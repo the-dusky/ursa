@@ -27,7 +27,8 @@ function HomeContent() {
     playerName,
     playerNumber,
     roomId,
-    connectedPlayers
+    connectedPlayers,
+    roomConfig
   } = useMultiplayerStore()
   
   const searchParams = useSearchParams()
@@ -38,7 +39,10 @@ function HomeContent() {
   }
 
   // Check if we should show the game interface or the initial setup screen
-  const shouldShowGameInterface = gameState.players.length > 0
+  // For multiplayer: only show game when room is started AND we have players
+  // For single player: show game when we have players
+  const shouldShowGameInterface = gameState.players.length > 0 && 
+    (!isMultiplayer || (isMultiplayer && roomConfig?.gameStarted))
 
   // Check if user is accessing a room URL without being properly registered
   useEffect(() => {
