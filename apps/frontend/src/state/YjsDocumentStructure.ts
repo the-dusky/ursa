@@ -104,6 +104,9 @@ export function initializeYjsDocument(yjsDoc: YjsGameDocument, initialState?: Pa
     yjsDoc.gameState.set('season', initialState?.season || 'Spring')
     yjsDoc.gameState.set('year', initialState?.year || 1)
     yjsDoc.gameState.set('turn', initialState?.turn || 1)
+    yjsDoc.gameState.set('round', initialState?.round || 1)
+    yjsDoc.gameState.set('totalBearTurns', initialState?.totalBearTurns || 0)
+    yjsDoc.gameState.set('totalPlayerTurns', initialState?.totalPlayerTurns || 0)
     yjsDoc.gameState.set('energyTaxPaid', initialState?.energyTaxPaid || false)
     yjsDoc.gameState.set('isGameStarted', initialState?.isGameStarted || false)
     yjsDoc.gameState.set('createdAt', initialState?.createdAt || Date.now())
@@ -138,6 +141,7 @@ export function playerToYjs(player: Player): Y.Map<any> {
   playerMap.set('score', player.score)
   playerMap.set('isActive', player.isActive)
   playerMap.set('playerNumber', player.playerNumber)
+  playerMap.set('playerTurn', player.playerTurn)
   
   // Piece count as Y.Map
   const pieceCount = new Y.Map()
@@ -178,6 +182,7 @@ export function pieceToYjs(piece: GamePiece): Y.Map<any> {
   pieceMap.set('isHibernating', piece.isHibernating)
   pieceMap.set('movedThisTurn', piece.movedThisTurn)
   pieceMap.set('harvestedThisTurn', piece.harvestedThisTurn)
+  pieceMap.set('bearTurn', piece.bearTurn)
   
   // Resources as Y.Map
   const resources = new Y.Map()
@@ -241,17 +246,18 @@ export function yjsToPlayer(playerMap: Y.Map<any>): Player {
   const harvestedArray = playerMap.get('harvestedThisTurn') as Y.Array<string>
   
   return {
-    id: playerMap.get('id'),
-    name: playerMap.get('name'),
-    color: playerMap.get('color'),
-    score: playerMap.get('score') || 0,
-    isActive: playerMap.get('isActive'),
-    playerNumber: playerMap.get('playerNumber'),
+    id: playerMap.get('id') ?? 'unknown-player',
+    name: playerMap.get('name') ?? 'Unknown Player',
+    color: playerMap.get('color') ?? '#64748b',
+    score: playerMap.get('score') ?? 0,
+    isActive: playerMap.get('isActive') ?? true,
+    playerNumber: playerMap.get('playerNumber') ?? 1,
+    playerTurn: playerMap.get('playerTurn') ?? 0,
     pieceCount: {
-      bears: pieceCountMap?.get('bears') || 0,
-      cubs: pieceCountMap?.get('cubs') || 0,
-      maxBears: pieceCountMap?.get('maxBears') || 5,
-      maxCubs: pieceCountMap?.get('maxCubs') || 10
+      bears: pieceCountMap?.get('bears') ?? 0,
+      cubs: pieceCountMap?.get('cubs') ?? 0,
+      maxBears: pieceCountMap?.get('maxBears') ?? 5,
+      maxCubs: pieceCountMap?.get('maxCubs') ?? 10
     },
     barrenSpaces: barrenSpacesArray ? barrenSpacesArray.toArray() : [],
     harvestedThisTurn: harvestedArray ? harvestedArray.toArray() : [],
@@ -266,23 +272,24 @@ export function yjsToPiece(pieceMap: Y.Map<any>): GamePiece {
   const resourcesMap = pieceMap.get('resources') as Y.Map<any>
   
   return {
-    id: pieceMap.get('id'),
-    playerId: pieceMap.get('playerId'),
-    spaceId: pieceMap.get('spaceId'),
-    type: pieceMap.get('type'),
-    health: pieceMap.get('health'),
-    energy: pieceMap.get('energy'),
-    fat: pieceMap.get('fat'),
-    emergencyEnergy: pieceMap.get('emergencyEnergy'),
-    isHibernating: pieceMap.get('isHibernating'),
-    movedThisTurn: pieceMap.get('movedThisTurn'),
-    harvestedThisTurn: pieceMap.get('harvestedThisTurn'),
+    id: pieceMap.get('id') ?? 'unknown-piece',
+    playerId: pieceMap.get('playerId') ?? 'unknown-player',
+    spaceId: pieceMap.get('spaceId') ?? 'unknown-space',
+    type: pieceMap.get('type') ?? 'bear',
+    health: pieceMap.get('health') ?? 100,
+    energy: pieceMap.get('energy') ?? 20,
+    fat: pieceMap.get('fat') ?? 0,
+    emergencyEnergy: pieceMap.get('emergencyEnergy') ?? 0,
+    isHibernating: pieceMap.get('isHibernating') ?? false,
+    movedThisTurn: pieceMap.get('movedThisTurn') ?? false,
+    harvestedThisTurn: pieceMap.get('harvestedThisTurn') ?? false,
+    bearTurn: pieceMap.get('bearTurn') ?? 0,
     resources: {
-      grains: resourcesMap?.get('grains') || 0,
-      berries: resourcesMap?.get('berries') || 0,
-      salmon: resourcesMap?.get('salmon') || 0,
-      honey: resourcesMap?.get('honey') || 0,
-      bearMeat: resourcesMap?.get('bearMeat') || 0
+      grains: resourcesMap?.get('grains') ?? 0,
+      berries: resourcesMap?.get('berries') ?? 0,
+      salmon: resourcesMap?.get('salmon') ?? 0,
+      honey: resourcesMap?.get('honey') ?? 0,
+      bearMeat: resourcesMap?.get('bearMeat') ?? 0
     }
   }
 }
@@ -291,23 +298,23 @@ export function yjsToPiece(pieceMap: Y.Map<any>): GamePiece {
  * Convert Y.js space structure back to GameSpace object
  */
 export function yjsToSpace(spaceMap: Y.Map<any>): GameSpace {
-  const edgeAnglesMap = spaceMap.get('edgeAngles') as Y.Map<any>
-  const adjacentArray = spaceMap.get('adjacentSpaces') as Y.Array<string>
+  const edgeAnglesMap = spaceMap.get('edgeAngles') as Y.Map<any> | null
+  const adjacentArray = spaceMap.get('adjacentSpaces') as Y.Array<string> | null
   const pieceMap = spaceMap.get('piece') as Y.Map<any> | null
   
   return {
-    id: spaceMap.get('id'),
-    ring: spaceMap.get('ring'),
-    position: spaceMap.get('position'),
-    centerAngle: spaceMap.get('centerAngle'),
-    quadrant: spaceMap.get('quadrant'),
-    subArea: spaceMap.get('subArea'),
-    canProduce: spaceMap.get('canProduce'),
-    hasHoney: spaceMap.get('hasHoney'),
+    id: spaceMap.get('id') ?? 'unknown-space',
+    ring: spaceMap.get('ring') ?? 1,
+    position: spaceMap.get('position') ?? 0,
+    centerAngle: spaceMap.get('centerAngle') ?? 0,
+    quadrant: spaceMap.get('quadrant') ?? 'Pastures',
+    subArea: spaceMap.get('subArea') ?? 'meadow',
+    canProduce: spaceMap.get('canProduce') ?? 'grains',
+    hasHoney: spaceMap.get('hasHoney') ?? false,
     edgeAngles: edgeAnglesMap ? {
-      left: edgeAnglesMap.get('left'),
-      right: edgeAnglesMap.get('right')
-    } : undefined,
+      left: edgeAnglesMap.get('left') ?? 0,
+      right: edgeAnglesMap.get('right') ?? 0
+    } : { left: 0, right: 0 },
     adjacentSpaces: adjacentArray ? adjacentArray.toArray() : [],
     piece: pieceMap ? yjsToPiece(pieceMap) : null
   }
@@ -318,8 +325,18 @@ export function yjsToSpace(spaceMap: Y.Map<any>): GameSpace {
  */
 export function syncStateToYjs(yjsDoc: YjsGameDocument, state: CoreGameState): void {
   // Validate state before syncing
-  if (!state || !state.players || !state.board || !state.board.rings) {
-    console.warn('Invalid game state for Y.js sync:', state)
+  if (!state) {
+    console.warn('No game state provided for Y.js sync')
+    return
+  }
+  
+  if (!state.board) {
+    console.warn('No board data in game state for Y.js sync')
+    return
+  }
+  
+  if (!Array.isArray(state.players)) {
+    console.warn('Invalid players array in game state for Y.js sync:', state.players)
     return
   }
   
@@ -332,36 +349,56 @@ export function syncStateToYjs(yjsDoc: YjsGameDocument, state: CoreGameState): v
     yjsDoc.gameState.set('season', state.season)
     yjsDoc.gameState.set('year', state.year)
     yjsDoc.gameState.set('turn', state.turn)
+    yjsDoc.gameState.set('round', state.round)
+    yjsDoc.gameState.set('totalBearTurns', state.totalBearTurns)
+    yjsDoc.gameState.set('totalPlayerTurns', state.totalPlayerTurns)
     yjsDoc.gameState.set('energyTaxPaid', state.energyTaxPaid)
     yjsDoc.gameState.set('isGameStarted', state.isGameStarted)
     
     // Update players array
     yjsDoc.players.delete(0, yjsDoc.players.length)
-    state.players.forEach(player => {
-      yjsDoc.players.push([playerToYjs(player)])
-    })
+    if (state.players && Array.isArray(state.players)) {
+      state.players.forEach(player => {
+        if (player) {
+          yjsDoc.players.push([playerToYjs(player)])
+        }
+      })
+    }
     
     // Update spaces array
     yjsDoc.spaces.delete(0, yjsDoc.spaces.length)
-    Object.values(state.board.spaces).forEach(space => {
-      yjsDoc.spaces.push([spaceToYjs(space)])
-    })
+    if (state.board.spaces) {
+      Object.values(state.board.spaces).forEach(space => {
+        if (space) {
+          yjsDoc.spaces.push([spaceToYjs(space)])
+        }
+      })
+    }
     
     // Update board metadata
     const ringsMap = yjsDoc.board.get('rings') as Y.Map<any> || new Y.Map()
-    Object.entries(state.board.rings).forEach(([ring, data]) => {
-      const ringMap = new Y.Map()
-      ringMap.set('spaceCount', data.spaceCount)
-      ringMap.set('radius', data.radius)
-      ringsMap.set(ring, ringMap)
-    })
+    if (state.board.rings) {
+      Object.entries(state.board.rings).forEach(([ring, data]) => {
+        if (data) {
+          const ringMap = new Y.Map()
+          ringMap.set('spaceCount', data.spaceCount || 0)
+          ringMap.set('radius', data.radius || 0)
+          ringsMap.set(ring, ringMap)
+        }
+      })
+    }
     yjsDoc.board.set('rings', ringsMap)
     
     // Update rotations
-    const rotationsArray = yjsDoc.board.get('rotations') as Y.Array<number>
-    if (rotationsArray) {
+    let rotationsArray = yjsDoc.board.get('rotations') as Y.Array<number>
+    if (!rotationsArray) {
+      rotationsArray = Y.Array.from(state.board.rotations || [])
+      yjsDoc.board.set('rotations', rotationsArray)
+    } else {
       rotationsArray.delete(0, rotationsArray.length)
-      rotationsArray.push(state.board.rotations)
+      if (state.board.rotations && state.board.rotations.length > 0) {
+        rotationsArray.push(state.board.rotations)
+      }
     }
     
     // Update dice state
@@ -452,16 +489,19 @@ export function yjsToGameState(yjsDoc: YjsGameDocument): CoreGameState | null {
     
     return {
       // Scalar fields
-      gameId: yjsDoc.gameState.get('gameId'),
-      gamePhase: yjsDoc.gameState.get('gamePhase'),
-      turnPhase: yjsDoc.gameState.get('turnPhase'),
-      currentPlayerIndex: yjsDoc.gameState.get('currentPlayerIndex') || 0,
-      season: yjsDoc.gameState.get('season'),
-      year: yjsDoc.gameState.get('year') || 1,
-      turn: yjsDoc.gameState.get('turn') || 1,
-      energyTaxPaid: yjsDoc.gameState.get('energyTaxPaid') || false,
-      isGameStarted: yjsDoc.gameState.get('isGameStarted') || false,
-      createdAt: yjsDoc.gameState.get('createdAt') || Date.now(),
+      gameId: yjsDoc.gameState.get('gameId') ?? `game-${Date.now()}`,
+      gamePhase: yjsDoc.gameState.get('gamePhase') ?? 'setup',
+      turnPhase: yjsDoc.gameState.get('turnPhase') ?? 'placement',
+      currentPlayerIndex: yjsDoc.gameState.get('currentPlayerIndex') ?? 0,
+      season: yjsDoc.gameState.get('season') ?? 'Spring',
+      year: yjsDoc.gameState.get('year') ?? 1,
+      turn: yjsDoc.gameState.get('turn') ?? 1,
+      round: yjsDoc.gameState.get('round') ?? 1,
+      totalBearTurns: yjsDoc.gameState.get('totalBearTurns') ?? 0,
+      totalPlayerTurns: yjsDoc.gameState.get('totalPlayerTurns') ?? 0,
+      energyTaxPaid: yjsDoc.gameState.get('energyTaxPaid') ?? false,
+      isGameStarted: yjsDoc.gameState.get('isGameStarted') ?? false,
+      createdAt: yjsDoc.gameState.get('createdAt') ?? Date.now(),
       lastUpdated: Date.now(),
       
       // Complex fields
@@ -486,30 +526,30 @@ export function yjsToGameState(yjsDoc: YjsGameDocument): CoreGameState | null {
 function yjsToDiceState(diceStateMap: Y.Map<any>): DiceState {
   const positionRollsMap = diceStateMap.get('positionRolls') as Y.Map<any> | null
   const directionRollsMap = diceStateMap.get('directionRolls') as Y.Map<any> | null
-  const rotationsArray = diceStateMap.get('rotations') as Y.Array<number>
+  const rotationsArray = diceStateMap.get('rotations') as Y.Array<number> | null
   
   let positionRolls: DiceRoll | null = null
   if (positionRollsMap) {
-    const diceArray = positionRollsMap.get('dice') as Y.Array<number>
+    const diceArray = positionRollsMap.get('dice') as Y.Array<number> | null
     positionRolls = {
       dice: diceArray ? diceArray.toArray() : [],
-      total: positionRollsMap.get('total') || 0,
-      timestamp: positionRollsMap.get('timestamp') || Date.now()
+      total: positionRollsMap.get('total') ?? 0,
+      timestamp: positionRollsMap.get('timestamp') ?? Date.now()
     }
   }
   
   let directionRolls: DiceRoll | null = null
   if (directionRollsMap) {
-    const diceArray = directionRollsMap.get('dice') as Y.Array<number>
+    const diceArray = directionRollsMap.get('dice') as Y.Array<number> | null
     directionRolls = {
       dice: diceArray ? diceArray.toArray() : [],
-      total: directionRollsMap.get('total') || 0,
-      timestamp: directionRollsMap.get('timestamp') || Date.now()
+      total: directionRollsMap.get('total') ?? 0,
+      timestamp: directionRollsMap.get('timestamp') ?? Date.now()
     }
   }
   
   return {
-    isRolling: diceStateMap.get('isRolling') || false,
+    isRolling: diceStateMap.get('isRolling') ?? false,
     positionRolls,
     directionRolls,
     rotations: rotationsArray ? rotationsArray.toArray() : []
@@ -802,13 +842,22 @@ export function observePlayer(
           if (piecesArray) {
             const observer = () => {
               const pieces: GamePiece[] = []
-              piecesArray.forEach(pieceMap => {
-                if (pieceMap instanceof Y.Map) {
-                  pieces.push(yjsToPiece(pieceMap))
+              try {
+                if (piecesArray && piecesArray.length > 0) {
+                  piecesArray.forEach(pieceMap => {
+                    if (pieceMap instanceof Y.Map) {
+                      pieces.push(yjsToPiece(pieceMap))
+                    }
+                  })
                 }
-              })
-              if (callbacks.onPieceChange) {
-                safeCall(callbacks.onPieceChange, callbacks.onError, pieces)
+                if (callbacks.onPieceChange) {
+                  safeCall(callbacks.onPieceChange, callbacks.onError, pieces)
+                }
+              } catch (error) {
+                console.error('Error in piecesArray observer:', error)
+                if (callbacks.onError) {
+                  callbacks.onError(error instanceof Error ? error : new Error(String(error)))
+                }
               }
             }
             piecesArray.observe(observer)
@@ -1001,13 +1050,13 @@ export function movePiece(
     // Perform the move if all entities found
     if (piece && fromSpaceMap && toSpaceMap) {
       // Remove piece from source space
-      fromSpaceMap.set('piece', null)
+      (fromSpaceMap as Y.Map<any>).set('piece', null)
       
       // Update piece's spaceId
-      piece.set('spaceId', toSpaceId)
+      (piece as Y.Map<any>).set('spaceId', toSpaceId)
       
       // Add piece to destination space
-      toSpaceMap.set('piece', piece)
+      (toSpaceMap as Y.Map<any>).set('piece', piece)
       
       success = true
     }

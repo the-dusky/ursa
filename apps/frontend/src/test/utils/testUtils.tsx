@@ -51,6 +51,7 @@ export function createTestPlayer(overrides: Partial<Player> = {}): Player {
     score: 0,
     barrenSpaces: [],
     harvestedThisTurn: [],
+    playerTurn: 0,  // Initialize new field
     isActive: true,
     playerNumber: 1,
     ...overrides
@@ -79,6 +80,8 @@ export function createTestPiece(overrides: Partial<GamePiece> = {}): GamePiece {
     health: 10,
     isHibernating: false,
     movedThisTurn: false,
+    harvestedThisTurn: false,
+    bearTurn: 0,  // Initialize new field
     ...overrides
   }
 }

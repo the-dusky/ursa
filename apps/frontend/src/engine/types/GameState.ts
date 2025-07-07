@@ -34,6 +34,7 @@ export interface CoreGamePiece {
   isHibernating?: boolean
   movedThisTurn?: boolean  // Track if piece moved this turn for harvest rules
   harvestedThisTurn?: boolean  // Track if piece harvested this turn (one harvest per turn)
+  bearTurn: number  // Number of turns this bear has been alive
 }
 
 export interface CoreGameSpace {
@@ -79,6 +80,7 @@ export interface CorePlayer {
   score: number
   barrenSpaces: string[]  // Spaces that are barren (recently harvested) for this player
   harvestedThisTurn: string[]  // Spaces harvested during current turn (temporary tracking)
+  playerTurn: number  // Number of times this player has taken a turn (increments each round)
 }
 
 /**
@@ -90,7 +92,10 @@ export interface CoreGameState {
   currentPlayerIndex: number
   season: Season
   year: number
-  turn: number
+  turn: number  // Individual player turns (1, 2, 3, 4, 5, 6...)
+  round: number  // Complete cycles through all players (1, 1, 1, 1, 2, 2...)
+  totalBearTurns: number  // Total of all bear turns across all bears
+  totalPlayerTurns: number  // Total of all player turns across all players
   gamePhase: GamePhase
   turnPhase: TurnPhase
   energyTaxPaid: boolean

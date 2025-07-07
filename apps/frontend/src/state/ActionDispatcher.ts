@@ -137,6 +137,32 @@ export interface EatResourceAction extends GameAction {
 }
 
 /**
+ * Arena Combat Actions
+ */
+export interface StartArenaAction extends GameAction {
+  type: 'START_ARENA'
+  spaceId: string
+  bearIds: string[]  // Bears that will participate
+}
+
+export interface JoinArenaAction extends GameAction {
+  type: 'JOIN_ARENA'
+  bearId: string
+  playerId: string
+}
+
+export interface CommitEnergyAction extends GameAction {
+  type: 'COMMIT_ENERGY'
+  bearId: string
+  energyCommitted: number
+  playerId: string
+}
+
+export interface ResolveArenaAction extends GameAction {
+  type: 'RESOLVE_ARENA'
+}
+
+/**
  * Turn Management Actions
  */
 export interface AdvanceTurnAction extends GameAction {
@@ -264,6 +290,10 @@ export type AnyGameAction =
   | TradingAction
   | StartGameAction
   | ResetGameAction
+  | StartArenaAction
+  | JoinArenaAction
+  | CommitEnergyAction
+  | ResolveArenaAction
 
 /**
  * Action Handler - Function that processes an action
@@ -797,6 +827,9 @@ export class ActionDispatcher {
       
       console.log(`🔄 ADVANCE_TURN - From Player ${currentPlayer?.name} to Player ${nextPlayer?.name}`)
       
+      // Check if this completes a round (back to first player)
+      const isRoundComplete = nextPlayerIndex === 0
+      
       // Reset movedThisTurn flag for all pieces and handle barren space transitions
       const updatedPlayers = state.players.map((player, index) => {
         if (index === state.currentPlayerIndex) {
@@ -806,15 +839,18 @@ export class ActionDispatcher {
           console.log(`    Old harvestedThisTurn: [${(player.harvestedThisTurn || []).join(', ')}]`)
           console.log(`    New barrenSpaces: [${(player.harvestedThisTurn || []).join(', ')}]`)
           console.log(`    New harvestedThisTurn: []`)
+          console.log(`    Player turn: ${player.playerTurn} → ${player.playerTurn + (isRoundComplete ? 1 : 0)}`)
           
           return {
             ...player,
             barrenSpaces: player.harvestedThisTurn || [],  // Replace barren spaces with this turn's harvests
             harvestedThisTurn: [],  // Clear harvested this turn
+            playerTurn: player.playerTurn + (isRoundComplete ? 1 : 0),  // Increment playerTurn when round completes
             pieces: player.pieces.map(piece => ({
               ...piece,
               movedThisTurn: false,
-              harvestedThisTurn: false
+              harvestedThisTurn: false,
+              bearTurn: piece.bearTurn + 1  // Increment bearTurn for each alive bear every turn
             }))
           }
         } else if (index === nextPlayerIndex) {
@@ -825,38 +861,57 @@ export class ActionDispatcher {
           return {
             ...player,
             barrenSpaces: [],  // Clear barren spaces - they've waited a full turn cycle
+            playerTurn: player.playerTurn + (isRoundComplete ? 1 : 0),  // Increment playerTurn when round completes
             pieces: player.pieces.map(piece => ({
               ...piece,
               movedThisTurn: false,
-              harvestedThisTurn: false
+              harvestedThisTurn: false,
+              bearTurn: piece.bearTurn + 1  // Increment bearTurn for each alive bear every turn
             }))
           }
         } else {
-          // For other players: just reset piece flags
+          // For other players: just reset piece flags, increment bearTurn, and playerTurn if round complete
           return {
             ...player,
+            playerTurn: player.playerTurn + (isRoundComplete ? 1 : 0),  // Increment playerTurn when round completes
             pieces: player.pieces.map(piece => ({
               ...piece,
               movedThisTurn: false,
-              harvestedThisTurn: false
+              harvestedThisTurn: false,
+              bearTurn: piece.bearTurn + 1  // Increment bearTurn for each alive bear every turn
             }))
           }
         }
       })
       
+      // Calculate total bear turns and total player turns
+      const totalBearTurns = updatedPlayers.reduce((total, player) => 
+        total + player.pieces.reduce((playerTotal, piece) => playerTotal + piece.bearTurn, 0), 0
+      )
+      
+      const totalPlayerTurns = updatedPlayers.reduce((total, player) => total + player.playerTurn, 0)
+      
       const newState = { 
         ...state, 
         players: updatedPlayers,
         turn: state.turn + 1,
+        round: isRoundComplete ? state.round + 1 : state.round,  // Increment round when cycle completes
+        totalBearTurns,
+        totalPlayerTurns,
         currentPlayerIndex: (state.currentPlayerIndex + 1) % state.players.length,
         turnPhase: 'movement' as TurnPhase,  // Reset to movement phase for next player
         energyTaxPaid: false, // Reset energy tax for new turn
         lastUpdated: Date.now()
       }
       
-      // Check if we need to advance season after TURNS_PER_SEASON turns
-      const shouldAdvanceSeason = newState.turn % SEASON_CONSTANTS.TURNS_PER_SEASON === 0
-      let message = `Advanced to turn ${newState.turn}`
+      // Check if we need to advance season after TURNS_PER_SEASON rounds (not turns)
+      const shouldAdvanceSeason = isRoundComplete && (newState.round % SEASON_CONSTANTS.TURNS_PER_SEASON === 0)
+      let message = `Advanced to turn ${newState.turn}${isRoundComplete ? ` (round ${newState.round})` : ''}`
+      
+      console.log(`📊 TURN TRACKING:`)
+      console.log(`  Turn: ${newState.turn} | Round: ${newState.round}`)
+      console.log(`  Total bear turns: ${totalBearTurns} | Total player turns: ${totalPlayerTurns}`)
+      console.log(`  Round complete: ${isRoundComplete} | Season advance: ${shouldAdvanceSeason}`)
       
       if (shouldAdvanceSeason) {
         // Auto-advance season
@@ -898,10 +953,50 @@ export class ActionDispatcher {
         ? state.year + 1 
         : state.year
       
+      let updatedPlayers = state.players
+      let resourcesLostMessage = ''
+      
+      // When transitioning TO Winter: perish all resources except bear meat and honey
+      if (nextSeason === 'Winter') {
+        console.log('❄️ WINTER ARRIVAL - Resources perishing...')
+        
+        const totalResourcesLost = { grains: 0, berries: 0, salmon: 0 }
+        
+        updatedPlayers = state.players.map(player => ({
+          ...player,
+          pieces: player.pieces.map(piece => {
+            // Count resources being lost
+            totalResourcesLost.grains += piece.resources.grains
+            totalResourcesLost.berries += piece.resources.berries
+            totalResourcesLost.salmon += piece.resources.salmon
+            
+            console.log(`  ${piece.id}: Lost ${piece.resources.grains} grains, ${piece.resources.berries} berries, ${piece.resources.salmon} salmon`)
+            console.log(`    Kept: ${piece.resources.honey} honey, ${piece.resources.bearMeat} bear meat`)
+            
+            return {
+              ...piece,
+              resources: {
+                grains: 0,      // Perish in winter
+                berries: 0,     // Perish in winter  
+                salmon: 0,      // Perish in winter
+                honey: piece.resources.honey,       // Survive winter
+                bearMeat: piece.resources.bearMeat  // Survive winter
+              }
+            }
+          })
+        }))
+        
+        const totalLost = totalResourcesLost.grains + totalResourcesLost.berries + totalResourcesLost.salmon
+        if (totalLost > 0) {
+          resourcesLostMessage = ` - ${totalLost} resources perished (${totalResourcesLost.grains} grains, ${totalResourcesLost.berries} berries, ${totalResourcesLost.salmon} salmon)`
+        }
+      }
+      
       const newState = { 
         ...state, 
         season: nextSeason,
         year: newYear,
+        players: updatedPlayers,
         lastUpdated: Date.now()
       }
       
@@ -910,7 +1005,7 @@ export class ActionDispatcher {
         success: true, 
         state: newState, 
         newState, 
-        message: `Season advanced to ${nextSeason}${yearMessage}` 
+        message: `Season advanced to ${nextSeason}${yearMessage}${resourcesLostMessage}` 
       }
     })
     
@@ -1072,6 +1167,7 @@ export class ActionDispatcher {
         isHibernating: false,
         movedThisTurn: false,
         harvestedThisTurn: false,
+        bearTurn: 0,
         resources: {
           grains: 0,
           berries: 0,
@@ -1651,6 +1747,347 @@ export class ActionDispatcher {
       }
       
       return { success: true, state: newState, newState, message: 'Game reset!' }
+    })
+    
+    // Arena Combat Handlers
+    this.registerHandler('START_ARENA', (state, action) => {
+      if (action.type !== 'START_ARENA') return { success: false, state, error: 'Wrong action type' }
+      
+      const { spaceId, bearIds } = action
+      
+      // Validate that bears exist and are on the specified space
+      const bearsOnSpace: string[] = []
+      const playerTeams: { [playerId: string]: string[] } = {}
+      
+      for (const bearId of bearIds) {
+        const bear = CoreGameStateUtils.getPiece(state, bearId)
+        if (!bear) {
+          return { success: false, state, error: `Bear ${bearId} not found` }
+        }
+        if (bear.spaceId !== spaceId) {
+          return { success: false, state, error: `Bear ${bearId} is not on space ${spaceId}` }
+        }
+        
+        bearsOnSpace.push(bearId)
+        if (!playerTeams[bear.playerId]) {
+          playerTeams[bear.playerId] = []
+        }
+        playerTeams[bear.playerId].push(bearId)
+      }
+      
+      // Need at least 2 different players for combat
+      const playerIds = Object.keys(playerTeams)
+      if (playerIds.length < 2) {
+        return { success: false, state, error: 'Arena requires bears from at least 2 different players' }
+      }
+      
+      const newState = {
+        ...state,
+        arenaState: {
+          spaceId,
+          participants: bearsOnSpace,
+          energyCommitments: {},
+          skillRolls: {},
+          phase: 'joining' as const,
+          teams: playerTeams.reduce((acc, playerId) => {
+            acc[playerId] = {
+              bearIds: playerTeams[playerId],
+              totalScore: 0
+            }
+            return acc
+          }, {} as any),
+          casualties: []
+        },
+        lastUpdated: Date.now()
+      }
+      
+      return { 
+        success: true, 
+        state: newState, 
+        newState, 
+        message: `Arena combat started at ${spaceId} with ${bearsOnSpace.length} bears from ${playerIds.length} players` 
+      }
+    })
+    
+    this.registerHandler('JOIN_ARENA', (state, action) => {
+      if (action.type !== 'JOIN_ARENA') return { success: false, state, error: 'Wrong action type' }
+      
+      if (!state.arenaState || state.arenaState.phase !== 'joining') {
+        return { success: false, state, error: 'No arena in joining phase' }
+      }
+      
+      const { bearId, playerId } = action
+      const bear = CoreGameStateUtils.getPiece(state, bearId)
+      
+      if (!bear) {
+        return { success: false, state, error: `Bear ${bearId} not found` }
+      }
+      
+      if (bear.playerId !== playerId) {
+        return { success: false, state, error: 'Bear does not belong to player' }
+      }
+      
+      if (bear.energy < 1) {
+        return { success: false, state, error: 'Bear needs at least 1 energy to join arena' }
+      }
+      
+      // Check if bear is adjacent to arena space
+      const arenaSpace = CoreGameStateUtils.getSpace(state, state.arenaState.spaceId)
+      const bearSpace = CoreGameStateUtils.getSpace(state, bear.spaceId)
+      
+      if (!arenaSpace || !bearSpace) {
+        return { success: false, state, error: 'Invalid space configuration' }
+      }
+      
+      const isAdjacent = arenaSpace.adjacentSpaces.includes(bear.spaceId)
+      if (!isAdjacent && bear.spaceId !== state.arenaState.spaceId) {
+        return { success: false, state, error: 'Bear must be on arena space or adjacent to join' }
+      }
+      
+      // Spend 1 energy to join
+      const updatedPlayers = state.players.map(p => 
+        p.id === playerId 
+          ? {
+              ...p,
+              pieces: p.pieces.map(piece => 
+                piece.id === bearId
+                  ? { ...piece, energy: piece.energy - 1 }
+                  : piece
+              )
+            }
+          : p
+      )
+      
+      const newArenaState = {
+        ...state.arenaState,
+        participants: [...state.arenaState.participants, bearId],
+        teams: {
+          ...state.arenaState.teams,
+          [playerId]: {
+            bearIds: [...(state.arenaState.teams[playerId]?.bearIds || []), bearId],
+            totalScore: 0
+          }
+        }
+      }
+      
+      const newState = {
+        ...state,
+        players: updatedPlayers,
+        arenaState: newArenaState,
+        lastUpdated: Date.now()
+      }
+      
+      return { 
+        success: true, 
+        state: newState, 
+        newState, 
+        message: `${bear.id} joined the arena (spent 1 energy)` 
+      }
+    })
+    
+    this.registerHandler('COMMIT_ENERGY', (state, action) => {
+      if (action.type !== 'COMMIT_ENERGY') return { success: false, state, error: 'Wrong action type' }
+      
+      if (!state.arenaState || !['joining', 'committing'].includes(state.arenaState.phase)) {
+        return { success: false, state, error: 'Arena not accepting energy commitments' }
+      }
+      
+      const { bearId, energyCommitted, playerId } = action
+      const bear = CoreGameStateUtils.getPiece(state, bearId)
+      
+      if (!bear) {
+        return { success: false, state, error: `Bear ${bearId} not found` }
+      }
+      
+      if (bear.playerId !== playerId) {
+        return { success: false, state, error: 'Bear does not belong to player' }
+      }
+      
+      if (!state.arenaState.participants.includes(bearId)) {
+        return { success: false, state, error: 'Bear is not participating in arena' }
+      }
+      
+      if (energyCommitted < 0 || energyCommitted > bear.energy) {
+        return { success: false, state, error: `Invalid energy commitment: ${energyCommitted} (bear has ${bear.energy})` }
+      }
+      
+      const newArenaState = {
+        ...state.arenaState,
+        phase: 'committing' as const,
+        energyCommitments: {
+          ...state.arenaState.energyCommitments,
+          [bearId]: energyCommitted
+        }
+      }
+      
+      const newState = {
+        ...state,
+        arenaState: newArenaState,
+        lastUpdated: Date.now()
+      }
+      
+      return { 
+        success: true, 
+        state: newState, 
+        newState, 
+        message: `Energy committed for ${bearId} (hidden until reveal)` 
+      }
+    })
+    
+    this.registerHandler('RESOLVE_ARENA', (state, action) => {
+      if (action.type !== 'RESOLVE_ARENA') return { success: false, state, error: 'Wrong action type' }
+      
+      if (!state.arenaState || state.arenaState.phase !== 'committing') {
+        return { success: false, state, error: 'Arena not ready for resolution' }
+      }
+      
+      // Check that all participants have committed energy
+      for (const bearId of state.arenaState.participants) {
+        if (!(bearId in state.arenaState.energyCommitments)) {
+          return { success: false, state, error: `Bear ${bearId} has not committed energy` }
+        }
+      }
+      
+      console.log('🏟️ ARENA RESOLUTION - Rolling dice and calculating scores...')
+      
+      // Roll 5 dice for each participant and calculate fight scores
+      const skillRolls: { [bearId: string]: number[] } = {}
+      const teamScores: { [playerId: string]: number } = {}
+      let detailedResults = '\nArena Combat Results:\n'
+      
+      // Calculate individual bear scores
+      for (const bearId of state.arenaState.participants) {
+        const bear = CoreGameStateUtils.getPiece(state, bearId)!
+        const energySpent = state.arenaState.energyCommitments[bearId]
+        
+        // Roll 5 dice (1-6 each)
+        const dice = Array.from({ length: 5 }, () => Math.floor(Math.random() * 6) + 1)
+        const skillTotal = dice.reduce((sum, die) => sum + die, 0)
+        skillRolls[bearId] = dice
+        
+        // Calculate fight score: fat + energySpent + (skillTotal / 2)
+        const fightScore = bear.fat + energySpent + Math.floor(skillTotal / 2)
+        
+        detailedResults += `  ${bearId}: Fat(${bear.fat}) + Energy(${energySpent}) + Skill(${skillTotal}÷2=${Math.floor(skillTotal / 2)}) = ${fightScore}\n`
+        detailedResults += `    Dice: [${dice.join(', ')}]\n`
+        
+        // Add to team total
+        if (!teamScores[bear.playerId]) {
+          teamScores[bear.playerId] = 0
+        }
+        teamScores[bear.playerId] += fightScore
+      }
+      
+      // Determine winner
+      const playerIds = Object.keys(teamScores)
+      const maxScore = Math.max(...Object.values(teamScores))
+      const winners = playerIds.filter(playerId => teamScores[playerId] === maxScore)
+      
+      detailedResults += `\nTeam Totals:\n`
+      for (const playerId of playerIds) {
+        detailedResults += `  Player ${playerId}: ${teamScores[playerId]}\n`
+      }
+      
+      let casualties: string[] = []
+      let updatedPlayers = state.players
+      let winnerMessage = ''
+      
+      if (winners.length === 1) {
+        const winnerPlayerId = winners[0]
+        winnerMessage = `Player ${winnerPlayerId} wins!`
+        
+        // All bears from losing teams die
+        casualties = state.arenaState.participants.filter(bearId => {
+          const bear = CoreGameStateUtils.getPiece(state, bearId)!
+          return bear.playerId !== winnerPlayerId
+        })
+        
+        detailedResults += `\n${winnerMessage}\n`
+        detailedResults += `Casualties: ${casualties.length > 0 ? casualties.join(', ') : 'None'}\n`
+        
+        // Remove dead bears and spend energy for all participants
+        updatedPlayers = state.players.map(player => ({
+          ...player,
+          pieces: player.pieces
+            .filter(piece => !casualties.includes(piece.id))  // Remove dead bears
+            .map(piece => {
+              if (state.arenaState!.participants.includes(piece.id)) {
+                // Spend committed energy
+                const energySpent = state.arenaState!.energyCommitments[piece.id]
+                return { ...piece, energy: piece.energy - energySpent }
+              }
+              return piece
+            })
+        }))
+        
+        // Award bear meat to winners (3 per casualty)
+        if (casualties.length > 0) {
+          const bearMeatReward = casualties.length * 3
+          updatedPlayers = updatedPlayers.map(player => 
+            player.id === winnerPlayerId
+              ? {
+                  ...player,
+                  pieces: player.pieces.map(piece => 
+                    state.arenaState!.participants.includes(piece.id)
+                      ? {
+                          ...piece,
+                          resources: {
+                            ...piece.resources,
+                            bearMeat: piece.resources.bearMeat + bearMeatReward
+                          }
+                        }
+                      : piece
+                  )
+                }
+              : player
+          )
+          detailedResults += `Winners gained ${bearMeatReward} bear meat each\n`
+        }
+      } else {
+        winnerMessage = 'Draw! All bears withdraw.'
+        detailedResults += `\n${winnerMessage}\n`
+        
+        // In a draw, just spend energy, no deaths
+        updatedPlayers = state.players.map(player => ({
+          ...player,
+          pieces: player.pieces.map(piece => {
+            if (state.arenaState!.participants.includes(piece.id)) {
+              const energySpent = state.arenaState!.energyCommitments[piece.id]
+              return { ...piece, energy: piece.energy - energySpent }
+            }
+            return piece
+          })
+        }))
+      }
+      
+      console.log(detailedResults)
+      
+      const newState = {
+        ...state,
+        players: updatedPlayers,
+        arenaState: {
+          ...state.arenaState,
+          phase: 'resolved' as const,
+          skillRolls,
+          teams: Object.keys(teamScores).reduce((acc, playerId) => {
+            acc[playerId] = {
+              bearIds: state.arenaState!.teams[playerId].bearIds,
+              totalScore: teamScores[playerId]
+            }
+            return acc
+          }, {} as any),
+          winner: winners.length === 1 ? winners[0] : undefined,
+          casualties
+        },
+        lastUpdated: Date.now()
+      }
+      
+      return { 
+        success: true, 
+        state: newState, 
+        newState, 
+        message: `Arena resolved: ${winnerMessage} ${casualties.length} casualties.` 
+      }
     })
   }
   

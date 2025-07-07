@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm lint:*)",
+      "Bash(pnpm tsc:*)",
+      "Bash(curl:*)",
+      "Bash(pkill:*)",
+      "Bash(rg:*)",
+      "Bash(git stash:*)",
+      "WebFetch(domain:docs.yjs.dev)",
+      "Bash(cp:*)",
+      "Bash(find:*)",
+      "Bash(docker logs:*)",
+      "Bash(lsof:*)",
+      "Bash(docker stop:*)",
+      "Bash(docker rm:*)",
+      "Bash(docker compose:*)",
+      "Bash(pnpm test:run:*)",
+      "Bash(pnpm build:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(with a different constructor\" when creating multiplayer rooms.\n\nRoot cause: MultiplayerStore was creating Y.Map(''players'') while \nYjsDocumentStructure expected Y.Array(''players''), causing type conflicts.\n\nSolution:\n- Updated MultiplayerStore to use createYjsDocument() from YjsDocumentStructure\n- Replaced conflicting Y.Map(''players'') with Y.Map(''connectedUsers'') \n- Updated all references to use consistent Y.js document structure:\n  - connectedUsers: Y.Map for room participants\n  - players: Y.Array for game players (from YjsDocumentStructure)\n  - roomState: Y.Map for room configuration\n- Fixed observer patterns to use proper document structure\n\nThis ensures all Y.js operations use the same document schema and \neliminates type definition conflicts.\n\n🤖 Generated with [Claude Code](https://claude.ai/code)\n\nCo-Authored-By: Claude <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(grep:*)",
+      "Bash(pnpm run dev:*)",
+      "Bash(ls:*)",
+      "Bash(pnpm test:*)",
+      "Bash(node:*)",
+      "Bash(rm:*)",
+      "Bash(pnpm run:*)",
+      "Bash(true)"
+    ],
+    "deny": []
+  }
+}

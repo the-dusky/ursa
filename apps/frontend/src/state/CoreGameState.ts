@@ -91,6 +91,23 @@ export interface CoreGameState extends EngineGameState {
     isComplete: boolean
   }
   
+  // Arena combat state
+  arenaState?: {
+    spaceId: string                    // Where the combat is happening
+    participants: string[]             // Bear IDs participating in combat
+    energyCommitments: { [bearId: string]: number }  // Hidden energy commitments
+    skillRolls: { [bearId: string]: number[] }       // 5 dice rolls per bear
+    phase: 'joining' | 'committing' | 'revealing' | 'resolved'
+    teams: {
+      [playerId: string]: {
+        bearIds: string[]
+        totalScore: number
+      }
+    }
+    winner?: string                    // Winning player ID
+    casualties: string[]               // Bear IDs that died
+  }
+  
   // Note: energyTaxPaid, season, year, turn, gamePhase, turnPhase, 
   // currentPlayerIndex all come from EngineGameState
 }
@@ -129,6 +146,9 @@ export function createInitialGameState(gameId: string = 'game-' + Date.now()): C
     season: 'Spring',
     year: 1,
     turn: 1,
+    round: 1,
+    totalBearTurns: 0,
+    totalPlayerTurns: 0,
     turnPhase: 'movement',
     currentPlayerIndex: 0,
     board: {
@@ -170,6 +190,9 @@ export const CoreGameStateUtils = {
       season: state.season,
       year: state.year,
       turn: state.turn,
+      round: state.round,
+      totalBearTurns: state.totalBearTurns,
+      totalPlayerTurns: state.totalPlayerTurns,
       energyTaxPaid: state.energyTaxPaid,
       
       // Enhanced fields
@@ -190,6 +213,7 @@ export const CoreGameStateUtils = {
         // Enhanced player fields
         isActive: player.isActive,
         playerNumber: player.playerNumber,
+        playerTurn: player.playerTurn,
         pieces: player.pieces.map(piece => ({
           id: piece.id,
           playerId: piece.playerId,
@@ -202,7 +226,8 @@ export const CoreGameStateUtils = {
           emergencyEnergy: piece.emergencyEnergy,
           isHibernating: piece.isHibernating,
           movedThisTurn: piece.movedThisTurn,
-          harvestedThisTurn: piece.harvestedThisTurn
+          harvestedThisTurn: piece.harvestedThisTurn,
+          bearTurn: piece.bearTurn
         }))
       })),
       
@@ -234,7 +259,8 @@ export const CoreGameStateUtils = {
                 emergencyEnergy: space.piece.emergencyEnergy,
                 isHibernating: space.piece.isHibernating,
                 movedThisTurn: space.piece.movedThisTurn,
-                harvestedThisTurn: space.piece.harvestedThisTurn
+                harvestedThisTurn: space.piece.harvestedThisTurn,
+                bearTurn: space.piece.bearTurn
               } : null
             }
           ])

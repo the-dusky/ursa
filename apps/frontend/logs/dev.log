@@ -1,2 +1,235 @@
-undefined
- ERR_PNPM_RECURSIVE_EXEC_FIRST_FAIL  Command "dev:local" not found
+
+> seasonal-board-game-monorepo@0.1.0 dev:local /Users/the_dusky/code/ursa
+> cp .env.docker .env.local && concurrently "pnpm run server:dev" "pnpm run dev"
+
+[0] 
+[0] > seasonal-board-game-monorepo@0.1.0 server:dev /Users/the_dusky/code/ursa
+[0] > docker compose up --build y-websocket-server
+[0] 
+[1] 
+[1] > seasonal-board-game-monorepo@0.1.0 dev /Users/the_dusky/code/ursa
+[1] > pnpm --filter frontend dev
+[1] 
+[0] time="2025-07-03T17:08:32-04:00" level=warning msg="/Users/the_dusky/code/ursa/docker-compose.yml: the attribute `version` is obsolete, it will be ignored, please remove it to avoid potential confusion"
+[0]  Service y-websocket-server  Building
+[0] #0 building with "desktop-linux" instance using docker driver
+[0] 
+[0] #1 [y-websocket-server internal] load build definition from Dockerfile
+[0] #1 transferring dockerfile: 771B done
+[0] #1 DONE 0.0s
+[0] 
+[0] #2 [y-websocket-server internal] load metadata for docker.io/library/node:18-alpine
+[1] 
+[1] > frontend@0.1.0 dev /Users/the_dusky/code/ursa/apps/frontend
+[1] > next dev --turbopack --port 8347
+[1] 
+[0] #2 DONE 2.6s
+[0] 
+[0] #3 [y-websocket-server internal] load .dockerignore
+[0] #3 transferring context: 126B done
+[0] #3 DONE 0.0s
+[0] 
+[0] #4 [y-websocket-server 1/8] FROM docker.io/library/node:18-alpine@sha256:8d6421d663b4c28fd3ebc498332f249011d118945588d0a35cb9bc4b8ca09d9e
+[0] #4 DONE 0.0s
+[0] 
+[0] #5 [y-websocket-server internal] load build context
+[0] #5 transferring context: 266B done
+[0] #5 DONE 0.0s
+[0] 
+[0] #6 [y-websocket-server 3/8] RUN npm install -g pnpm
+[0] #6 CACHED
+[0] 
+[0] #7 [y-websocket-server 2/8] WORKDIR /app
+[0] #7 CACHED
+[0] 
+[0] #8 [y-websocket-server 7/8] RUN addgroup -g 1001 -S nodejs
+[0] #8 CACHED
+[0] 
+[0] #9 [y-websocket-server 4/8] COPY package*.json ./
+[0] #9 CACHED
+[0] 
+[0] #10 [y-websocket-server 5/8] RUN pnpm install --prod
+[0] #10 CACHED
+[0] 
+[0] #11 [y-websocket-server 6/8] COPY . .
+[0] #11 CACHED
+[0] 
+[0] #12 [y-websocket-server 8/8] RUN adduser -S nodejs -u 1001
+[0] #12 CACHED
+[0] 
+[0] #13 [y-websocket-server] exporting to image
+[0] #13 exporting layers done
+[0] #13 writing image sha256:ac9888811f11f8cf00f7328ec8efdc7a9b5805cd736faa5aecd3fc7558a0b1c6 done
+[0] #13 naming to docker.io/library/ursa-y-websocket-server done
+[0] #13 DONE 0.0s
+[0] 
+[0] #14 [y-websocket-server] resolving provenance for metadata file
+[0]  Service y-websocket-server  Built
+[0] #14 DONE 0.0s
+[0]  Container seasonal-board-game-server  Running
+[0] Attaching to seasonal-board-game-server
+[1]    ▲ Next.js 15.3.3 (Turbopack)
+[1]    - Local:        http://localhost:8347
+[1]    - Network:      http://10.1.10.131:8347
+[1]    - Environments: .env.local
+[1] 
+[1]  ✓ Starting...
+[1]  ✓ Ready in 1843ms
+[1]  ○ Compiling / ...
+[1]  ✓ Compiled / in 5s
+[1]  GET / 200 in 5753ms
+[0] seasonal-board-game-server  | [2025-07-03T21:29:01.304Z] [INFO] 🔌 Client client-7 disconnected
+[0] seasonal-board-game-server  | [2025-07-03T21:29:01.305Z] [INFO] 👥 Total connections: 0
+[0] seasonal-board-game-server  | [2025-07-03T21:29:01.305Z] [INFO] 🧹 Cleared empty rooms
+[0] seasonal-board-game-server  | [2025-07-03T21:29:01.338Z] [INFO] 💾 Persisted final state for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-03T21:30:01.106Z] [INFO] 🔌 New connection client-8 from 172.18.0.1
+[0] seasonal-board-game-server  | [2025-07-03T21:30:01.107Z] [INFO] 👥 Total connections: 1
+[0] seasonal-board-game-server  | [2025-07-03T21:30:01.109Z] [INFO] 🏠 Client client-8 joined room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-03T21:30:04.927Z] [INFO] 📥 Loaded persisted state for room: room-1751570870457-dfyptj (62435 bytes)
+[0] seasonal-board-game-server  | [2025-07-03T21:30:04.927Z] [INFO] 🔗 Persistence bound for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | Caught error while handling a Yjs update TypeError: Cannot read properties of undefined (reading 'splice')
+[0] seasonal-board-game-server  |     at splitItem (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:9619:22)
+[0] seasonal-board-game-server  |     at getItemCleanEnd (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:3010:34)
+[0] seasonal-board-game-server  |     at Item.getMissing (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:9905:19)
+[0] seasonal-board-game-server  |     at integrateStructs (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:1618:35)
+[0] seasonal-board-game-server  |     at /app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:1701:25
+[0] seasonal-board-game-server  |     at transact (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:3447:14)
+[0] seasonal-board-game-server  |     at readUpdateV2 (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:1689:3)
+[0] seasonal-board-game-server  |     at applyUpdateV2 (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:1784:3)
+[0] seasonal-board-game-server  |     at Object.applyUpdate (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:1798:58)
+[0] seasonal-board-game-server  |     at readSyncStep2 (/app/node_modules/.pnpm/y-protocols@1.0.6_yjs@13.6.27/node_modules/y-protocols/dist/sync.cjs:107:18)
+[0] seasonal-board-game-server  | [2025-07-03T21:34:57.066Z] [INFO] 🔌 Client client-8 disconnected
+[0] seasonal-board-game-server  | [2025-07-03T21:34:57.067Z] [INFO] 👥 Total connections: 0
+[0] seasonal-board-game-server  | [2025-07-03T21:34:57.067Z] [INFO] 🧹 Cleared empty rooms
+[0] seasonal-board-game-server  | [2025-07-03T21:34:57.108Z] [INFO] 💾 Persisted final state for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-03T21:34:57.683Z] [INFO] 🔌 New connection client-9 from 172.18.0.1
+[0] seasonal-board-game-server  | [2025-07-03T21:34:57.683Z] [INFO] 👥 Total connections: 1
+[0] seasonal-board-game-server  | [2025-07-03T21:34:57.704Z] [INFO] 🏠 Client client-9 joined room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-03T21:35:02.340Z] [INFO] 📥 Loaded persisted state for room: room-1751570870457-dfyptj (64 bytes)
+[0] seasonal-board-game-server  | [2025-07-03T21:35:02.340Z] [INFO] 🔗 Persistence bound for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-03T23:26:35.953Z] [INFO] 🔌 Client client-9 disconnected
+[0] seasonal-board-game-server  | [2025-07-03T23:26:35.954Z] [INFO] 👥 Total connections: 0
+[0] seasonal-board-game-server  | [2025-07-03T23:26:35.954Z] [INFO] 🧹 Cleared empty rooms
+[0] seasonal-board-game-server  | [2025-07-03T23:26:35.964Z] [INFO] 💾 Persisted final state for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T00:27:45.799Z] [INFO] 🔌 New connection client-10 from 172.18.0.1
+[0] seasonal-board-game-server  | [2025-07-04T00:27:45.802Z] [INFO] 👥 Total connections: 1
+[0] seasonal-board-game-server  | [2025-07-04T00:27:47.263Z] [INFO] 🏠 Client client-10 joined room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T00:27:51.954Z] [INFO] 📥 Loaded persisted state for room: room-1751570870457-dfyptj (64 bytes)
+[0] seasonal-board-game-server  | [2025-07-04T00:27:51.954Z] [INFO] 🔗 Persistence bound for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T03:36:31.933Z] [INFO] 🔌 Client client-10 disconnected
+[0] seasonal-board-game-server  | [2025-07-04T03:36:31.937Z] [INFO] 👥 Total connections: 0
+[0] seasonal-board-game-server  | [2025-07-04T03:36:31.937Z] [INFO] 🧹 Cleared empty rooms
+[0] seasonal-board-game-server  | [2025-07-04T03:36:31.961Z] [INFO] 💾 Persisted final state for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T03:36:32.263Z] [INFO] 🔌 New connection client-11 from 172.18.0.1
+[0] seasonal-board-game-server  | [2025-07-04T03:36:32.263Z] [INFO] 👥 Total connections: 1
+[0] seasonal-board-game-server  | [2025-07-04T03:36:32.263Z] [INFO] 🏠 Client client-11 joined room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T03:36:35.922Z] [INFO] 📥 Loaded persisted state for room: room-1751570870457-dfyptj (64 bytes)
+[0] seasonal-board-game-server  | [2025-07-04T03:36:35.922Z] [INFO] 🔗 Persistence bound for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T10:01:52.985Z] [INFO] 🔌 Client client-11 disconnected
+[0] seasonal-board-game-server  | [2025-07-04T10:01:52.986Z] [INFO] 👥 Total connections: 0
+[0] seasonal-board-game-server  | [2025-07-04T10:01:53.015Z] [INFO] 🧹 Cleared empty rooms
+[0] seasonal-board-game-server  | [2025-07-04T10:01:53.027Z] [INFO] 💾 Persisted final state for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T10:38:50.731Z] [INFO] 🔌 New connection client-12 from 172.18.0.1
+[0] seasonal-board-game-server  | [2025-07-04T10:38:50.731Z] [INFO] 👥 Total connections: 1
+[0] seasonal-board-game-server  | [2025-07-04T10:38:50.733Z] [INFO] 🏠 Client client-12 joined room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T10:38:53.949Z] [INFO] 📥 Loaded persisted state for room: room-1751570870457-dfyptj (64 bytes)
+[0] seasonal-board-game-server  | [2025-07-04T10:38:53.950Z] [INFO] 🔗 Persistence bound for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T14:26:28.751Z] [INFO] 🔌 Client client-12 disconnected
+[0] seasonal-board-game-server  | [2025-07-04T14:26:28.765Z] [INFO] 👥 Total connections: 0
+[0] seasonal-board-game-server  | [2025-07-04T14:26:28.766Z] [INFO] 🧹 Cleared empty rooms
+[0] seasonal-board-game-server  | [2025-07-04T14:26:28.878Z] [INFO] 🔌 New connection client-13 from 172.18.0.1
+[0] seasonal-board-game-server  | [2025-07-04T14:26:28.881Z] [INFO] 👥 Total connections: 1
+[0] seasonal-board-game-server  | [2025-07-04T14:26:28.898Z] [INFO] 🏠 Client client-13 joined room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T14:26:28.946Z] [INFO] 💾 Persisted final state for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T14:26:32.978Z] [INFO] 📥 Loaded persisted state for room: room-1751570870457-dfyptj (64 bytes)
+[0] seasonal-board-game-server  | [2025-07-04T14:26:32.978Z] [INFO] 🔗 Persistence bound for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T14:26:54.462Z] [INFO] 🔌 Client client-13 disconnected
+[0] seasonal-board-game-server  | [2025-07-04T14:26:54.462Z] [INFO] 👥 Total connections: 0
+[0] seasonal-board-game-server  | [2025-07-04T14:26:54.462Z] [INFO] 🧹 Cleared empty rooms
+[0] seasonal-board-game-server  | [2025-07-04T14:26:54.468Z] [INFO] 💾 Persisted final state for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T15:20:11.392Z] [INFO] 🔌 New connection client-14 from 172.18.0.1
+[0] seasonal-board-game-server  | [2025-07-04T15:20:11.392Z] [INFO] 👥 Total connections: 1
+[0] seasonal-board-game-server  | [2025-07-04T15:20:11.393Z] [INFO] 🏠 Client client-14 joined room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T15:20:16.112Z] [INFO] 📥 Loaded persisted state for room: room-1751570870457-dfyptj (64 bytes)
+[0] seasonal-board-game-server  | [2025-07-04T15:20:16.113Z] [INFO] 🔗 Persistence bound for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T16:00:48.513Z] [INFO] 🔌 Client client-14 disconnected
+[0] seasonal-board-game-server  | [2025-07-04T16:00:48.519Z] [INFO] 👥 Total connections: 0
+[0] seasonal-board-game-server  | [2025-07-04T16:00:48.520Z] [INFO] 🧹 Cleared empty rooms
+[0] seasonal-board-game-server  | [2025-07-04T16:00:48.612Z] [INFO] 🔌 New connection client-15 from 172.18.0.1
+[0] seasonal-board-game-server  | [2025-07-04T16:00:48.614Z] [INFO] 👥 Total connections: 1
+[0] seasonal-board-game-server  | [2025-07-04T16:00:48.619Z] [INFO] 🏠 Client client-15 joined room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T16:00:48.689Z] [INFO] 💾 Persisted final state for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T16:00:52.702Z] [INFO] 📥 Loaded persisted state for room: room-1751570870457-dfyptj (64 bytes)
+[0] seasonal-board-game-server  | [2025-07-04T16:00:52.702Z] [INFO] 🔗 Persistence bound for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T18:50:17.309Z] [INFO] 🔌 Client client-15 disconnected
+[0] seasonal-board-game-server  | [2025-07-04T18:50:17.315Z] [INFO] 👥 Total connections: 0
+[0] seasonal-board-game-server  | [2025-07-04T18:50:17.315Z] [INFO] 🧹 Cleared empty rooms
+[0] seasonal-board-game-server  | [2025-07-04T18:50:17.416Z] [INFO] 🔌 New connection client-16 from 172.18.0.1
+[0] seasonal-board-game-server  | [2025-07-04T18:50:17.417Z] [INFO] 👥 Total connections: 1
+[0] seasonal-board-game-server  | [2025-07-04T18:50:17.423Z] [INFO] 🏠 Client client-16 joined room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T18:50:17.451Z] [INFO] 💾 Persisted final state for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T18:50:21.275Z] [INFO] 📥 Loaded persisted state for room: room-1751570870457-dfyptj (64 bytes)
+[0] seasonal-board-game-server  | [2025-07-04T18:50:21.275Z] [INFO] 🔗 Persistence bound for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T20:05:07.138Z] [INFO] 🔌 Client client-16 disconnected
+[0] seasonal-board-game-server  | [2025-07-04T20:05:07.138Z] [INFO] 👥 Total connections: 0
+[0] seasonal-board-game-server  | [2025-07-04T20:05:07.138Z] [INFO] 🧹 Cleared empty rooms
+[0] seasonal-board-game-server  | [2025-07-04T20:05:07.155Z] [INFO] 💾 Persisted final state for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T20:06:06.990Z] [INFO] 🔌 New connection client-17 from 172.18.0.1
+[0] seasonal-board-game-server  | [2025-07-04T20:06:06.990Z] [INFO] 👥 Total connections: 1
+[0] seasonal-board-game-server  | [2025-07-04T20:06:06.991Z] [INFO] 🏠 Client client-17 joined room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T20:06:10.188Z] [INFO] 📥 Loaded persisted state for room: room-1751570870457-dfyptj (62435 bytes)
+[0] seasonal-board-game-server  | [2025-07-04T20:06:10.189Z] [INFO] 🔗 Persistence bound for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | Caught error while handling a Yjs update TypeError: Cannot read properties of undefined (reading 'splice')
+[0] seasonal-board-game-server  |     at splitItem (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:9619:22)
+[0] seasonal-board-game-server  |     at getItemCleanEnd (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:3010:34)
+[0] seasonal-board-game-server  |     at Item.getMissing (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:9905:19)
+[0] seasonal-board-game-server  |     at integrateStructs (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:1618:35)
+[0] seasonal-board-game-server  |     at /app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:1701:25
+[0] seasonal-board-game-server  |     at transact (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:3447:14)
+[0] seasonal-board-game-server  |     at readUpdateV2 (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:1689:3)
+[0] seasonal-board-game-server  |     at applyUpdateV2 (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:1784:3)
+[0] seasonal-board-game-server  |     at Object.applyUpdate (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:1798:58)
+[0] seasonal-board-game-server  |     at readSyncStep2 (/app/node_modules/.pnpm/y-protocols@1.0.6_yjs@13.6.27/node_modules/y-protocols/dist/sync.cjs:107:18)
+[0] seasonal-board-game-server  | [2025-07-04T20:30:20.473Z] [INFO] 🔌 Client client-17 disconnected
+[0] seasonal-board-game-server  | [2025-07-04T20:30:20.473Z] [INFO] 👥 Total connections: 0
+[0] seasonal-board-game-server  | [2025-07-04T20:30:20.473Z] [INFO] 🧹 Cleared empty rooms
+[0] seasonal-board-game-server  | [2025-07-04T20:30:20.484Z] [INFO] 💾 Persisted final state for room: room-1751570870457-dfyptj
+l-board-game-server  | [2025-07-04T16:00:48.612Z] [INFO] 🔌 New connection client-15 from 172.18.0.1
+[0] seasonal-board-game-server  | [2025-07-04T16:00:48.614Z] [INFO] 👥 Total connections: 1
+[0] seasonal-board-game-server  | [2025-07-04T16:00:48.619Z] [INFO] 🏠 Client client-15 joined room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T16:00:48.689Z] [INFO] 💾 Persisted final state for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T16:00:52.702Z] [INFO] 📥 Loaded persisted state for room: room-1751570870457-dfyptj (64 bytes)
+[0] seasonal-board-game-server  | [2025-07-04T16:00:52.702Z] [INFO] 🔗 Persistence bound for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T18:50:17.309Z] [INFO] 🔌 Client client-15 disconnected
+[0] seasonal-board-game-server  | [2025-07-04T18:50:17.315Z] [INFO] 👥 Total connections: 0
+[0] seasonal-board-game-server  | [2025-07-04T18:50:17.315Z] [INFO] 🧹 Cleared empty rooms
+[0] seasonal-board-game-server  | [2025-07-04T18:50:17.416Z] [INFO] 🔌 New connection client-16 from 172.18.0.1
+[0] seasonal-board-game-server  | [2025-07-04T18:50:17.417Z] [INFO] 👥 Total connections: 1
+[0] seasonal-board-game-server  | [2025-07-04T18:50:17.423Z] [INFO] 🏠 Client client-16 joined room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T18:50:17.451Z] [INFO] 💾 Persisted final state for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T18:50:21.275Z] [INFO] 📥 Loaded persisted state for room: room-1751570870457-dfyptj (64 bytes)
+[0] seasonal-board-game-server  | [2025-07-04T18:50:21.275Z] [INFO] 🔗 Persistence bound for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T20:05:07.138Z] [INFO] 🔌 Client client-16 disconnected
+[0] seasonal-board-game-server  | [2025-07-04T20:05:07.138Z] [INFO] 👥 Total connections: 0
+[0] seasonal-board-game-server  | [2025-07-04T20:05:07.138Z] [INFO] 🧹 Cleared empty rooms
+[0] seasonal-board-game-server  | [2025-07-04T20:05:07.155Z] [INFO] 💾 Persisted final state for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T20:06:06.990Z] [INFO] 🔌 New connection client-17 from 172.18.0.1
+[0] seasonal-board-game-server  | [2025-07-04T20:06:06.990Z] [INFO] 👥 Total connections: 1
+[0] seasonal-board-game-server  | [2025-07-04T20:06:06.991Z] [INFO] 🏠 Client client-17 joined room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | [2025-07-04T20:06:10.188Z] [INFO] 📥 Loaded persisted state for room: room-1751570870457-dfyptj (62435 bytes)
+[0] seasonal-board-game-server  | [2025-07-04T20:06:10.189Z] [INFO] 🔗 Persistence bound for room: room-1751570870457-dfyptj
+[0] seasonal-board-game-server  | Caught error while handling a Yjs update TypeError: Cannot read properties of undefined (reading 'splice')
+[0] seasonal-board-game-server  |     at splitItem (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:9619:22)
+[0] seasonal-board-game-server  |     at getItemCleanEnd (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:3010:34)
+[0] seasonal-board-game-server  |     at Item.getMissing (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:9905:19)
+[0] seasonal-board-game-server  |     at integrateStructs (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:1618:35)
+[0] seasonal-board-game-server  |     at /app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:1701:25
+[0] seasonal-board-game-server  |     at transact (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:3447:14)
+[0] seasonal-board-game-server  |     at readUpdateV2 (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:1689:3)
+[0] seasonal-board-game-server  |     at applyUpdateV2 (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:1784:3)
+[0] seasonal-board-game-server  |     at Object.applyUpdate (/app/node_modules/.pnpm/yjs@13.6.27/node_modules/yjs/dist/yjs.cjs:1798:58)
+[0] seasonal-board-game-server  |     at readSyncStep2 (/app/node_modules/.pnpm/y-protocols@1.0.6_yjs@13.6.27/node_modules/y-protocols/dist/sync.cjs:107:18)
+[0] seasonal-board-game-server  | [2025-07-04T20:30:20.473Z] [INFO] 🔌 Client client-17 disconnected
+[0] seasonal-board-game-server  | [2025-07-04T20:30:20.473Z] [INFO] 👥 Total connections: 0
+[0] seasonal-board-game-server  | [2025-07-04T20:30:20.473Z] [INFO] 🧹 Cleared empty rooms
+[0] seasonal-board-game-server  | [2025-07-04T20:30:20.484Z] [INFO] 💾 Persisted final state for room: room-1751570870457-dfyptj

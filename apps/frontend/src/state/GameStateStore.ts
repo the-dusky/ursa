@@ -187,6 +187,7 @@ export const useGameStateStore = create<GameStore>()(
               score: 0,
               barrenSpaces: [],  // Initialize empty barren spaces array
               harvestedThisTurn: [],  // Initialize empty harvested this turn array
+              playerTurn: 0,  // Initialize new field
               isActive: true,
               playerNumber: i + 1
             }))
@@ -321,12 +322,13 @@ export const useGameActions = () => {
         playerId
       }),
       
-    eatResource: (pieceId: string, resourceType: 'grains' | 'berries' | 'salmon' | 'honey' | 'bearMeat', amount: number, playerId: string) =>
+    eatResource: (pieceId: string, resourceType: 'grains' | 'berries' | 'salmon' | 'honey' | 'bearMeat', amount: number, playerId: string, conversionType: 'energy' | 'fat' = 'energy') =>
       dispatch.dispatch({
         type: 'EAT_RESOURCE',
         pieceId,
         resourceType,
         amount,
+        conversionType,
         playerId
       }),
       
@@ -394,6 +396,34 @@ export const useGameActions = () => {
         type: 'PAY_ENERGY_TAX',
         pieceId,
         playerId
+      }),
+      
+    // Arena Combat Actions
+    startArena: (spaceId: string, bearIds: string[]) =>
+      dispatch.dispatch({
+        type: 'START_ARENA',
+        spaceId,
+        bearIds
+      }),
+      
+    joinArena: (bearId: string, playerId: string) =>
+      dispatch.dispatch({
+        type: 'JOIN_ARENA',
+        bearId,
+        playerId
+      }),
+      
+    commitEnergy: (bearId: string, energyCommitted: number, playerId: string) =>
+      dispatch.dispatch({
+        type: 'COMMIT_ENERGY',
+        bearId,
+        energyCommitted,
+        playerId
+      }),
+      
+    resolveArena: () =>
+      dispatch.dispatch({
+        type: 'RESOLVE_ARENA'
       }),
       
     updateBoardRotations: (rotations: number[]) => {
