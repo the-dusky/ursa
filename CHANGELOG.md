@@ -1,5 +1,49 @@
 # Changelog
 
+## [Unreleased] - 2025-07-07
+
+### Added
+- **Arena Combat System**
+  - Implemented complete team-based combat mechanics for bears on same space
+  - Added ArenaPanel component with multi-phase combat flow
+  - Created hidden energy commitment phase with simultaneous reveal
+  - Implemented skill-based dice rolls determined by committed energy
+  - Added support for adjacent bears to join combat (1 energy cost)
+  - Track combat casualties and team scores
+  - Added 4 new arena actions: START_ARENA, JOIN_ARENA, COMMIT_ENERGY, RESOLVE_ARENA
+
+- **Enhanced Turn and Round Tracking**
+  - Separated turn counter (individual moves) from round counter (complete cycles)
+  - Added bearTurn field to track individual bear lifespans
+  - Added playerTurn field to track when players join the game
+  - Implemented totalBearTurns and totalPlayerTurns for game analytics
+  - Season advancement now based on complete rounds, not individual turns
+
+- **Debug and Monitoring Tools**
+  - Created StateDebugPanel component for real-time state monitoring
+  - Shows player info, game state, bear placement, and multiplayer status
+  - Added monitor.js Node.js script for Y.js WebSocket traffic analysis
+  - Support for monitoring specific rooms with --room parameter
+  - Tracks rapid state changes and identifies sync issues
+
+- **Winter Resource Management**
+  - Implemented resource perishing when transitioning to winter
+  - Grains, berries, and salmon expire at winter start
+  - Only honey and bear meat survive winter transitions
+  - Added detailed logging of resources lost
+
+### Changed
+- **State Management Improvements**
+  - Fixed Y.js sync with nullish coalescing (`??`) for boolean/numeric values
+  - Added SimpleStateCoordinator for cleaner Y.js integration
+  - Enhanced type safety in state conversions
+  - Improved error handling in multiplayer synchronization
+
+### Fixed
+- Boolean and numeric value synchronization in multiplayer
+- Prevented false/0 values from being lost in Y.js updates
+- Enhanced test utilities to support new turn tracking fields
+
 ## [Unreleased] - 2025-07-02
 
 ### Added
