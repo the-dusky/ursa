@@ -1,0 +1,207 @@
+{
+  "version": "1.0.0",
+  "energy": {
+    "maxEnergy": 20,
+    "maxFat": 100,
+    "fatToEnergyRatio": 2,
+    "startingEnergy": 8,
+    "hibernationResetEnergy": 8
+  },
+  "energyTax": {
+    "bySeason": {
+      "Spring": 1,
+      "Summer": 2,
+      "Autumn": 1,
+      "Winter": {
+        "mountains": 2,
+        "outside": 5
+      }
+    }
+  },
+  "movement": {
+    "fatThresholds": {
+      "low": 5,
+      "medium": 15
+    },
+    "bySeason": {
+      "Spring": {
+        "lowFat": 1,
+        "mediumFat": 2,
+        "highFat": 3
+      },
+      "Summer": {
+        "lowFat": 2,
+        "mediumFat": 3,
+        "highFat": 4
+      },
+      "Autumn": {
+        "lowFat": 1,
+        "mediumFat": 2,
+        "highFat": 3
+      },
+      "Winter": {
+        "lowFat": 7,
+        "mediumFat": 6,
+        "highFat": 5
+      }
+    }
+  },
+  "seasons": {
+    "turnsPerSeason": 5,
+    "order": [
+      "Spring",
+      "Summer",
+      "Autumn",
+      "Winter"
+    ]
+  },
+  "resourceConversion": {
+    "grains": {
+      "energy": 2,
+      "fat": 0
+    },
+    "berries": {
+      "energy": 3,
+      "fat": 2
+    },
+    "salmon": {
+      "energy": 3,
+      "fat": 6
+    },
+    "honey": {
+      "energy": 6,
+      "fat": 2
+    },
+    "bearMeat": {
+      "energy": 8,
+      "fat": 10
+    }
+  },
+  "harvestTable": {
+    "Spring": {
+      "Pastures": {
+        "grains": 2,
+        "berries": 0,
+        "salmon": 0,
+        "honey": 0
+      },
+      "Forests": {
+        "grains": 0,
+        "berries": 0,
+        "salmon": 0,
+        "honey": 0
+      },
+      "Riverlands": {
+        "grains": 0,
+        "berries": 0,
+        "salmon": 0,
+        "honey": 0
+      },
+      "Mountains": {
+        "grains": 0,
+        "berries": 0,
+        "salmon": 0,
+        "honey": 0
+      }
+    },
+    "Summer": {
+      "Pastures": {
+        "grains": 2,
+        "berries": 0,
+        "salmon": 0,
+        "honey": 0
+      },
+      "Forests": {
+        "grains": 0,
+        "berries": 2,
+        "salmon": 0,
+        "honeyBonus": 1
+      },
+      "Riverlands": {
+        "grains": 0,
+        "berries": 0,
+        "salmon": 1,
+        "honey": 0
+      },
+      "Mountains": {
+        "grains": 0,
+        "berries": 0,
+        "salmon": 0,
+        "honey": 0
+      }
+    },
+    "Autumn": {
+      "Pastures": {
+        "grains": 1,
+        "berries": 0,
+        "salmon": 0,
+        "honey": 0
+      },
+      "Forests": {
+        "grains": 0,
+        "berries": 3,
+        "salmon": 0,
+        "honeyBonus": 2
+      },
+      "Riverlands": {
+        "grains": 0,
+        "berries": 0,
+        "salmon": 3,
+        "honey": 0
+      },
+      "Mountains": {
+        "grains": 0,
+        "berries": 0,
+        "salmon": 0,
+        "honey": 0
+      }
+    },
+    "Winter": {
+      "Pastures": {
+        "grains": 0,
+        "berries": 0,
+        "salmon": 0,
+        "honey": 0
+      },
+      "Forests": {
+        "grains": 0,
+        "berries": 0,
+        "salmon": 0,
+        "honey": 0
+      },
+      "Riverlands": {
+        "grains": 0,
+        "berries": 0,
+        "salmon": 0,
+        "honey": 0
+      },
+      "Mountains": {
+        "grains": 0,
+        "berries": 0,
+        "salmon": 0,
+        "honey": 0
+      }
+    }
+  },
+  "board": {
+    "honeySpaces": 5,
+    "ringsConfig": [
+      20,
+      24,
+      28,
+      32,
+      36
+    ]
+  },
+  "players": {
+    "maxBears": 3,
+    "maxCubs": 6,
+    "startingBears": 1
+  },
+  "combat": {
+    "attackCost": 1,
+    "fleeFirstMoveCostMultiplier": 2,
+    "attackerBonus": 1,
+    "defenderBonus": 0
+  }
+}
