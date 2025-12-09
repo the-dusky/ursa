@@ -218,20 +218,26 @@ export class StateManager {
     }
     
     // Piece consistency - pieces are stored in players array
+    // During arena combat, multiple pieces can occupy the same space
+    const arenaParticipants = state.arenaState?.participants || []
+
     for (const player of state.players) {
       for (const piece of player.pieces) {
         // Skip validation for pieces not on board (spaceId === null)
         if (piece.spaceId === null) continue
-        
+
         const space = CoreGameStateUtils.getSpace(state, piece.spaceId)
         if (!space) {
           errors.push(`Piece ${piece.id} references non-existent space ${piece.spaceId}`)
         } else if (space.piece?.id !== piece.id) {
-          errors.push(`Piece ${piece.id} location mismatch - space ${piece.spaceId} doesn't reference it`)
+          // Skip this check for arena participants - they share a space during combat
+          if (!arenaParticipants.includes(piece.id)) {
+            errors.push(`Piece ${piece.id} location mismatch - space ${piece.spaceId} doesn't reference it`)
+          }
         }
       }
     }
-    
+
     // Board consistency
     for (const [spaceId, space] of Object.entries(state.board.spaces)) {
       if (space.piece) {
@@ -239,7 +245,10 @@ export class StateManager {
         if (!piece) {
           errors.push(`Space ${spaceId} references non-existent piece ${space.piece.id}`)
         } else if (piece.spaceId !== spaceId) {
-          errors.push(`Space ${spaceId} piece location mismatch`)
+          // Skip this check for arena participants - they share a space during combat
+          if (!arenaParticipants.includes(space.piece.id)) {
+            errors.push(`Space ${spaceId} piece location mismatch`)
+          }
         }
       }
     }

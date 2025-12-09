@@ -552,6 +552,59 @@ function GameSpaceSVG({ space, gameState, gameActions, showCoordinates, selected
             className="cursor-pointer"
             onClick={handleClick}
           />
+
+          {/* Red pulsing outline for bears under attack */}
+          {space.piece.attackedBy && (
+            <>
+              <circle
+                cx={centerPoint.x}
+                cy={centerPoint.y}
+                r={28}
+                fill="none"
+                stroke="#dc2626"
+                strokeWidth="4"
+                className="animate-pulse"
+                style={{ filter: 'drop-shadow(0 0 8px #dc2626)' }}
+              />
+              {/* Sword attack indicator on defended bear */}
+              <text
+                x={centerPoint.x + 18}
+                y={centerPoint.y - 18}
+                textAnchor="middle"
+                dominantBaseline="central"
+                className="text-lg pointer-events-none select-none"
+                style={{ filter: 'drop-shadow(0 0 2px #000)' }}
+              >
+                ⚔️
+              </text>
+            </>
+          )}
+
+          {/* Yellow indicator for attacking bears */}
+          {space.piece.isAttacking && (
+            <>
+              <circle
+                cx={centerPoint.x}
+                cy={centerPoint.y}
+                r={28}
+                fill="none"
+                stroke="#f59e0b"
+                strokeWidth="3"
+                strokeDasharray="5,3"
+              />
+              {/* Fist/attacking indicator */}
+              <text
+                x={centerPoint.x + 18}
+                y={centerPoint.y - 18}
+                textAnchor="middle"
+                dominantBaseline="central"
+                className="text-lg pointer-events-none select-none"
+                style={{ filter: 'drop-shadow(0 0 2px #000)' }}
+              >
+                👊
+              </text>
+            </>
+          )}
         </>
       )}
 

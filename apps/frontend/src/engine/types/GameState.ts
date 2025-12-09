@@ -35,6 +35,10 @@ export interface CoreGamePiece {
   movedThisTurn?: boolean  // Track if piece moved this turn for harvest rules
   harvestedThisTurn?: boolean  // Track if piece harvested this turn (one harvest per turn)
   bearTurn: number  // Number of turns this bear has been alive
+  // Combat state
+  attackedBy?: string  // Bear ID that declared attack on this piece
+  isAttacking?: string // Bear ID this piece is attacking (for attacker reference)
+  fleeingFrom?: string // Bear ID this piece is fleeing from (double move cost)
 }
 
 export interface CoreGameSpace {

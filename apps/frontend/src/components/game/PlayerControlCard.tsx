@@ -45,11 +45,11 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
   
   if (!player || String(player.id) === 'bears') return null
 
-  const handleEatResource = async (pieceId: string, resourceType: 'grains' | 'berries' | 'salmon' | 'honey' | 'bearMeat', amount: number, playerId: string) => {
+  const handleEatResource = async (pieceId: string, resourceType: 'grains' | 'berries' | 'salmon' | 'honey' | 'bearMeat', amount: number, playerId: string, conversionType: 'energy' | 'fat' = 'energy') => {
     if (!isCurrentPlayer || turnPhase !== 'eat') return
-    
+
     try {
-      await gameActions.eatResource(pieceId, resourceType, amount, playerId)
+      await gameActions.eatResource(pieceId, resourceType, amount, playerId, conversionType)
     } catch (error) {
       console.error('Failed to eat resource:', error)
     }
@@ -109,12 +109,53 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
 
   const handleHarvest = async (pieceId: string) => {
     if (!isCurrentPlayer || turnPhase !== 'harvest') return
-    
+
     try {
       await gameActions.harvest(pieceId, String(player.id))
     } catch (error) {
       console.error('Failed to harvest:', error)
     }
+  }
+
+  const handleDeclareAttack = async (attackerId: string, defenderId: string) => {
+    if (!isCurrentPlayer || turnPhase !== 'harvest') return
+
+    try {
+      await gameActions.declareAttack(attackerId, defenderId, String(player.id))
+    } catch (error) {
+      console.error('Failed to declare attack:', error)
+    }
+  }
+
+  const handleRespondToAttack = async (defenderId: string, response: 'fight' | 'flee') => {
+    if (!isCurrentPlayer) return
+
+    try {
+      await gameActions.respondToAttack(defenderId, String(player.id), response)
+    } catch (error) {
+      console.error('Failed to respond to attack:', error)
+    }
+  }
+
+  // Helper to get adjacent enemy bears for a piece
+  const getAdjacentEnemyBears = (piece: typeof player.pieces[0]) => {
+    const space = Object.values(board.spaces).find(s => s.id === piece.spaceId)
+    if (!space) return []
+
+    const adjacentSpaceIds = space.adjacentSpaces || []
+    const enemyBears: Array<{ bear: typeof piece; ownerName: string }> = []
+
+    for (const otherPlayer of players) {
+      if (String(otherPlayer.id) === String(player.id)) continue // Skip own bears
+
+      for (const otherPiece of otherPlayer.pieces) {
+        if (adjacentSpaceIds.includes(otherPiece.spaceId) && otherPiece.type === 'bear') {
+          enemyBears.push({ bear: otherPiece, ownerName: otherPlayer.name })
+        }
+      }
+    }
+
+    return enemyBears
   }
 
   // Check if all bears are hibernating (only if there are actual pieces)
@@ -173,13 +214,12 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
                 🐻 Bear Placement Phase
               </div>
               {(() => {
-                const { currentPlayerIndex } = gameState.bearPlacementState
-                const currentBearPlacementPlayer = gameState.players[currentPlayerIndex]
-                const isMyBearPlacementTurn = isMultiplayer 
-                  ? Boolean(currentBearPlacementPlayer && String(currentBearPlacementPlayer.id) === String(playerNumber))
-                  : Boolean(currentBearPlacementPlayer && String(currentBearPlacementPlayer.id) === playerId)
-                
-                if (isMyBearPlacementTurn && isMyCard) {
+                const { currentPlayerIndex: placementPlayerIndex } = gameState.bearPlacementState
+                const currentBearPlacementPlayer = gameState.players[placementPlayerIndex]
+                // Check if THIS CARD's player is the one whose turn it is to place
+                const isThisPlayersTurnToPlace = currentBearPlacementPlayer && String(currentBearPlacementPlayer.id) === playerId
+
+                if (isThisPlayersTurnToPlace) {
                   return (
                     <div className="space-y-2">
                       <p className="text-sm font-medium text-green-700">
@@ -217,38 +257,148 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
           </div>
         )}
 
+        {/* Fight or Flight Decision - Shows AFTER energy tax is paid */}
+        {gameState.gamePhase === 'playing' && isCurrentPlayer && (() => {
+          // Find any of our bears that are under attack
+          const bearsUnderAttack = player.pieces.filter(piece => piece.attackedBy)
+
+          if (bearsUnderAttack.length === 0) return null
+
+          return (
+            <div className="mb-3 border-2 border-red-500 rounded-lg p-3 bg-red-50 animate-pulse">
+              <div className="text-center mb-2">
+                <span className="text-2xl">⚔️</span>
+                <h3 className="text-lg font-bold text-red-700">Under Attack!</h3>
+              </div>
+
+              {bearsUnderAttack.map(piece => {
+                // Find the attacker
+                const attacker = players
+                  .flatMap(p => p.pieces)
+                  .find(p => p.id === piece.attackedBy)
+                const attackerOwner = players.find(p =>
+                  p.pieces.some(pp => pp.id === piece.attackedBy)
+                )
+
+                return (
+                  <div key={piece.id} className="bg-white rounded p-2 mb-2 border border-red-300">
+                    <div className="text-sm text-center mb-2">
+                      <span className="font-medium">{attackerOwner?.name || 'Unknown'}</span>&apos;s bear is attacking your {piece.type}!
+                    </div>
+                    <div className="text-xs text-gray-600 text-center mb-2">
+                      Your bear: ⚡{piece.energy} 🟫{piece.fat}
+                      {attacker && <span className="ml-2">| Attacker: ⚡{attacker.energy} 🟫{attacker.fat}</span>}
+                    </div>
+
+                    {/* Show fight/flee buttons only after tax is paid */}
+                    {energyTaxPaid ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          size="sm"
+                          variant="default"
+                          className="bg-red-600 hover:bg-red-700 text-white"
+                          onClick={() => handleRespondToAttack(piece.id, 'fight')}
+                          title="Stand and fight! Enter the arena for combat."
+                        >
+                          🗡️ FIGHT
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-blue-500 text-blue-600 hover:bg-blue-50"
+                          onClick={() => handleRespondToAttack(piece.id, 'flee')}
+                          title="Flee! First move costs 2x energy, then normal movement."
+                        >
+                          🏃 FLEE (2x move)
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="text-center text-sm text-orange-600 bg-orange-100 p-2 rounded">
+                        💰 Pay energy tax first, then choose fight or flee
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+
+              <div className="text-xs text-red-600 text-center mt-2">
+                {energyTaxPaid
+                  ? '⚠️ You must respond to all attacks before moving!'
+                  : '⚠️ Pay energy tax to unlock fight/flee decision!'
+                }
+              </div>
+            </div>
+          )
+        })()}
+
         {/* Current Turn Phase Display */}
         {gameState.gamePhase === 'playing' && !allBearsHibernating && isCurrentPlayer && (
           <div className="mb-2">
             <div className="flex items-center justify-between">
-              <div className="font-medium text-sm">Turn Phase: 
+              <div className="font-medium text-sm">Turn Phase:
                 <span className="ml-2 bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs">
                   {turnPhase.charAt(0).toUpperCase() + turnPhase.slice(1)}
                 </span>
               </div>
-              <div className="flex gap-1">
-                {/* Phase advancement button */}
-                {turnPhase !== 'hibernation' && (
-                  <Button
-                    onClick={handleAdvancePhase}
-                    variant="outline"
-                    size="sm"
-                    className="text-xs border-blue-500 text-blue-600 hover:bg-blue-50"
-                  >
-                    Next Phase →
-                  </Button>
-                )}
-                {/* Turn completion button - only show after hibernation phase or when all actions complete */}
-                {turnPhase === 'hibernation' && (
-                  <Button
-                    onClick={handleAdvanceTurn}
-                    variant="default"
-                    size="sm"
-                    className="text-xs bg-green-500 hover:bg-green-600 text-white"
-                  >
-                    ✓ End Turn
-                  </Button>
-                )}
+              <div className="flex flex-col gap-1">
+                {/* Phase advancement button - shows name of next phase */}
+                {(() => {
+                  const phases = ['movement', 'harvest', 'eat', 'hibernation']
+                  const currentIndex = phases.indexOf(turnPhase)
+                  const nextPhase = phases[(currentIndex + 1) % phases.length]
+                  const nextPhaseName = nextPhase.charAt(0).toUpperCase() + nextPhase.slice(1)
+
+                  // For hibernation phase, show both Hibernation button and End Turn option
+                  if (turnPhase === 'eat') {
+                    return (
+                      <div className="flex flex-col items-center gap-1">
+                        <Button
+                          onClick={handleAdvancePhase}
+                          variant="outline"
+                          size="sm"
+                          className="text-xs border-blue-500 text-blue-600 hover:bg-blue-50 w-full"
+                        >
+                          {nextPhaseName} →
+                        </Button>
+                        <span className="text-xs text-gray-400">or</span>
+                        <Button
+                          onClick={handleAdvanceTurn}
+                          variant="default"
+                          size="sm"
+                          className="text-xs bg-green-500 hover:bg-green-600 text-white w-full"
+                        >
+                          ✓ End Turn
+                        </Button>
+                      </div>
+                    )
+                  }
+
+                  // For hibernation phase, only show End Turn
+                  if (turnPhase === 'hibernation') {
+                    return (
+                      <Button
+                        onClick={handleAdvanceTurn}
+                        variant="default"
+                        size="sm"
+                        className="text-xs bg-green-500 hover:bg-green-600 text-white"
+                      >
+                        ✓ End Turn
+                      </Button>
+                    )
+                  }
+
+                  // For other phases, show next phase button
+                  return (
+                    <Button
+                      onClick={handleAdvancePhase}
+                      variant="outline"
+                      size="sm"
+                      className="text-xs border-blue-500 text-blue-600 hover:bg-blue-50"
+                    >
+                      {nextPhaseName} →
+                    </Button>
+                  )
+                })()}
               </div>
             </div>
           </div>
@@ -297,7 +447,7 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
                               ⚡
                             </button>
                             <button
-                              onClick={() => handleEatResource(piece.id, 'grains', 1, String(player.id))}
+                              onClick={() => handleEatResource(piece.id, 'grains', 1, String(player.id), 'fat')}
                               className="text-xs bg-orange-100 hover:bg-orange-200 rounded px-1 py-0.5"
                               title={getConversionTooltip('grains', 'fat')}
                             >
@@ -321,7 +471,7 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
                               ⚡
                             </button>
                             <button
-                              onClick={() => handleEatResource(piece.id, 'berries', 1, String(player.id))}
+                              onClick={() => handleEatResource(piece.id, 'berries', 1, String(player.id), 'fat')}
                               className="text-xs bg-orange-100 hover:bg-orange-200 rounded px-1 py-0.5"
                               title="2 fat"
                             >
@@ -345,7 +495,7 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
                               ⚡
                             </button>
                             <button
-                              onClick={() => handleEatResource(piece.id, 'salmon', 1, String(player.id))}
+                              onClick={() => handleEatResource(piece.id, 'salmon', 1, String(player.id), 'fat')}
                               className="text-xs bg-orange-100 hover:bg-orange-200 rounded px-1 py-0.5"
                               title="4 fat"
                             >
@@ -369,7 +519,7 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
                               ⚡
                             </button>
                             <button
-                              onClick={() => handleEatResource(piece.id, 'honey', 1, String(player.id))}
+                              onClick={() => handleEatResource(piece.id, 'honey', 1, String(player.id), 'fat')}
                               className="text-xs bg-orange-100 hover:bg-orange-200 rounded px-1 py-0.5"
                               title="3 fat"
                             >
@@ -393,7 +543,7 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
                               ⚡
                             </button>
                             <button
-                              onClick={() => handleEatResource(piece.id, 'bearMeat', 1, String(player.id))}
+                              onClick={() => handleEatResource(piece.id, 'bearMeat', 1, String(player.id), 'fat')}
                               className="text-xs bg-orange-100 hover:bg-orange-200 rounded px-1 py-0.5"
                               title="8 fat"
                             >
@@ -455,18 +605,52 @@ export function PlayerControlCard({ playerId }: PlayerControlCardProps) {
                     const canHarvest = space && space.canProduce && season !== 'Winter' && !piece.harvestedThisTurn && !isSpaceBarren
                     const isOnMountains = space?.quadrant === 'Mountains'
                     
-                    if (canHarvest) {
+                    // Get adjacent enemy bears for attack option
+                    const adjacentEnemies = getAdjacentEnemyBears(piece)
+                    const hasAdjacentEnemies = adjacentEnemies.length > 0
+                    const alreadyAttacking = !!piece.isAttacking
+
+                    if (canHarvest || hasAdjacentEnemies) {
                       return (
-                        <div className="mt-1">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="w-full text-xs h-6 bg-green-50 hover:bg-green-100 border-green-300"
-                            onClick={() => handleHarvest(piece.id)}
-                            title={`Harvest ${space.quadrant} resources`}
-                          >
-                            🌾 Harvest
-                          </Button>
+                        <div className="mt-1 space-y-1">
+                          {/* Harvest button */}
+                          {canHarvest && !alreadyAttacking && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="w-full text-xs h-6 bg-green-50 hover:bg-green-100 border-green-300"
+                              onClick={() => handleHarvest(piece.id)}
+                              title={`Harvest ${space.quadrant} resources`}
+                            >
+                              🌾 Harvest
+                            </Button>
+                          )}
+
+                          {/* Attack options - shows if adjacent to enemy bears */}
+                          {hasAdjacentEnemies && !piece.harvestedThisTurn && !alreadyAttacking && (
+                            <div className="border border-red-200 rounded p-1 bg-red-50">
+                              <div className="text-xs text-red-700 font-medium mb-1">⚔️ Attack (replaces harvest)</div>
+                              {adjacentEnemies.map(({ bear: enemy, ownerName }) => (
+                                <Button
+                                  key={enemy.id}
+                                  size="sm"
+                                  variant="outline"
+                                  className="w-full text-xs h-6 bg-red-100 hover:bg-red-200 border-red-300 mb-0.5"
+                                  onClick={() => handleDeclareAttack(piece.id, enemy.id)}
+                                  title={`Attack ${ownerName}'s bear (costs 1 energy, ends turn)`}
+                                >
+                                  🗡️ Attack {ownerName}&apos;s bear
+                                </Button>
+                              ))}
+                            </div>
+                          )}
+
+                          {/* Show if already declared attack */}
+                          {alreadyAttacking && (
+                            <div className="text-xs text-red-600 text-center">
+                              ⚔️ Attack declared - awaiting response
+                            </div>
+                          )}
                         </div>
                       )
                     }
