@@ -19,6 +19,8 @@ interface GameTable3DProps {
   previewState?: CoreGameState
   /** Show debug helpers like axes */
   debug?: boolean
+  /** Show the combat arena platform */
+  showArena?: boolean
 }
 
 /**
@@ -52,7 +54,7 @@ function TableSurface() {
 /**
  * Main 3D game table component
  */
-export function GameTable3D({ previewState, debug = false }: GameTable3DProps) {
+export function GameTable3D({ previewState, debug = false, showArena = false }: GameTable3DProps) {
   const { board, players, diceState } = useGameState()
 
   // Use preview state or actual game state
@@ -108,6 +110,7 @@ export function GameTable3D({ previewState, debug = false }: GameTable3DProps) {
             board={gameBoard}
             players={gamePlayers}
             rotations={rotations}
+            showArena={showArena}
           />
 
           {/* Contact shadows for grounding */}

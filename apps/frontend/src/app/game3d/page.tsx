@@ -29,8 +29,10 @@ const GameTable3D = dynamic(
 )
 
 export default function Game3DPage() {
-  const { gamePhase, players, season, year, turn, board, actions } = useGameState()
+  const { gamePhase, players, season, year, turn, board, actions, diceState } = useGameState()
   const [initialized, setInitialized] = useState(false)
+  const [isRolling, setIsRolling] = useState(false)
+  const [showArena, setShowArena] = useState(false)
 
   // Initialize board for preview if no game started
   useEffect(() => {
@@ -44,6 +46,21 @@ export default function Game3DPage() {
       setInitialized(true)
     }
   }, [initialized, board.spaces, actions])
+
+  // Handle setup dice roll
+  const handleRollSetupDice = async () => {
+    if (isRolling) return
+    setIsRolling(true)
+
+    // Roll position dice first
+    await actions.rollDice?.('position')
+
+    // Wait a moment, then roll direction dice
+    setTimeout(async () => {
+      await actions.rollDice?.('direction')
+      setIsRolling(false)
+    }, 500)
+  }
 
   return (
     <div className="h-screen w-screen bg-gray-900 flex flex-col">
@@ -79,7 +96,7 @@ export default function Game3DPage() {
             </div>
           }
         >
-          <GameTable3D debug={false} />
+          <GameTable3D debug={false} showArena={showArena} />
         </Suspense>
       </main>
 
@@ -97,6 +114,76 @@ export default function Game3DPage() {
             <kbd className="bg-gray-700 px-1 rounded">Scroll</kbd> Zoom
           </li>
         </ul>
+      </div>
+
+      {/* Dice Roll Panel */}
+      <div className="absolute top-20 right-4 bg-black/70 text-white p-4 rounded-lg text-sm w-64">
+        <h3 className="font-bold mb-3">Setup Roll</h3>
+
+        <button
+          onClick={handleRollSetupDice}
+          disabled={isRolling}
+          className={`w-full py-2 px-4 rounded font-bold transition-colors ${
+            isRolling
+              ? 'bg-gray-600 cursor-not-allowed'
+              : 'bg-blue-600 hover:bg-blue-500'
+          }`}
+        >
+          {isRolling ? 'Rolling...' : 'Roll Setup Dice'}
+        </button>
+
+        <button
+          onClick={() => setShowArena(!showArena)}
+          className={`w-full mt-2 py-2 px-4 rounded font-bold transition-colors ${
+            showArena
+              ? 'bg-red-600 hover:bg-red-500'
+              : 'bg-amber-600 hover:bg-amber-500'
+          }`}
+        >
+          {showArena ? 'Hide Arena' : 'Show Arena'}
+        </button>
+
+        {/* Show dice results */}
+        {diceState.positionRolls && (
+          <div className="mt-3">
+            <p className="text-gray-400 text-xs mb-1">Position Dice:</p>
+            <div className="flex gap-1">
+              {diceState.positionRolls.dice.map((die, i) => (
+                <span key={i} className="bg-white text-black w-6 h-6 flex items-center justify-center rounded font-bold text-sm">
+                  {die}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {diceState.directionRolls && (
+          <div className="mt-2">
+            <p className="text-gray-400 text-xs mb-1">Direction Dice:</p>
+            <div className="flex gap-1">
+              {diceState.directionRolls.dice.map((die, i) => (
+                <span key={i} className={`w-6 h-6 flex items-center justify-center rounded font-bold text-sm ${
+                  die >= 4 ? 'bg-green-500 text-white' : 'bg-red-500 text-white'
+                }`}>
+                  {die >= 4 ? '→' : '←'}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {diceState.rotations && diceState.rotations.some(r => r !== 0) && (
+          <div className="mt-2">
+            <p className="text-gray-400 text-xs mb-1">Ring Rotations:</p>
+            <div className="flex gap-1">
+              {diceState.rotations.map((rot, i) => (
+                <span key={i} className="bg-gray-700 w-6 h-6 flex items-center justify-center rounded text-xs">
+                  {rot > 0 ? `+${rot}` : rot}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Player list */}
