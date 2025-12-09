@@ -1,6 +1,6 @@
 /**
  * ActionDispatcher - Single Entry Point for Game Actions
- * 
+ *
  * This is the ONLY way to trigger game actions. It provides:
  * - Type-safe action definitions
  * - Centralized action logging
@@ -11,28 +11,26 @@
 
 import { CoreGameState, GameActionResult, CoreGameStateUtils, GamePhase, TurnPhase } from './CoreGameState'
 import { StateManager } from './StateManager'
+import { useConfigStore, GameConfig } from './ConfigStore'
 
 /**
- * Winter Survival Constants
+ * Helper to get current config from the store
+ * This allows runtime config changes via God Mode
  */
-const ENERGY_CONSTANTS = {
-  MAX_ENERGY: 20,
-  MAX_FAT: 100, // Allow high fat accumulation for winter prep
-  FAT_TO_ENERGY_RATIO: 2, // 2 fat = 1 energy
-  STARTING_ENERGY: 20,
-  HIBERNATION_RESET_ENERGY: 5,
-  WINTER_COST_MOUNTAINS: 2, // Energy per turn in mountains during winter
-  WINTER_COST_OUTSIDE: 5,   // Energy per turn outside mountains during winter
-  NORMAL_SEASON_COST: 1     // Energy per turn in non-winter seasons
-} as const
+const getConfig = (): GameConfig => {
+  return useConfigStore.getState().config
+}
 
 /**
- * Seasonal Constants
+ * Helper functions to get config values (for cleaner code)
  */
-const SEASON_CONSTANTS = {
-  TURNS_PER_SEASON: 5,
-  SEASONS: ['Spring', 'Summer', 'Autumn', 'Winter'] as const
-} as const
+const getEnergyConfig = () => getConfig().energy
+const getEnergyTaxConfig = () => getConfig().energyTax
+const getMovementConfig = () => getConfig().movement
+const getSeasonsConfig = () => getConfig().seasons
+const getResourceConversionConfig = () => getConfig().resourceConversion
+const getHarvestTableConfig = () => getConfig().harvestTable
+const getCombatConfig = () => getConfig().combat
 
 /**
  * Convert fat to energy when needed for survival
@@ -46,18 +44,18 @@ function convertFatToEnergy(currentEnergy: number, currentFat: number, energyNee
   const energyShortfall = energyNeeded - totalAvailableEnergy
   
   if (energyShortfall <= 0) {
-    // No conversion needed
+    // No conversion needed - just deduct from energy
     return {
-      newEnergy: currentEnergy,
+      newEnergy: currentEnergy - energyNeeded,
       newFat: currentFat,
-      energyUsed: Math.min(energyNeeded, currentEnergy),
+      energyUsed: energyNeeded,
       fatUsed: 0,
       canAfford: true
     }
   }
   
   // Calculate fat needed (2 fat = 1 energy)
-  const fatNeeded = energyShortfall * ENERGY_CONSTANTS.FAT_TO_ENERGY_RATIO
+  const fatNeeded = energyShortfall * getEnergyConfig().fatToEnergyRatio
   
   if (currentFat < fatNeeded) {
     // Cannot afford even with fat conversion
@@ -72,7 +70,7 @@ function convertFatToEnergy(currentEnergy: number, currentFat: number, energyNee
   
   // Convert fat to energy and pay the cost
   const energyFromFat = energyShortfall
-  const newEnergy = Math.min(currentEnergy + energyFromFat - energyNeeded, ENERGY_CONSTANTS.MAX_ENERGY)
+  const newEnergy = Math.min(currentEnergy + energyFromFat - energyNeeded, getEnergyConfig().maxEnergy)
   const newFat = currentFat - fatNeeded
   
   return {
@@ -160,6 +158,27 @@ export interface CommitEnergyAction extends GameAction {
 
 export interface ResolveArenaAction extends GameAction {
   type: 'RESOLVE_ARENA'
+}
+
+export interface ClearArenaAction extends GameAction {
+  type: 'CLEAR_ARENA'
+}
+
+/**
+ * Adjacent Attack Actions (Fight or Flight mechanic)
+ */
+export interface DeclareAttackAction extends GameAction {
+  type: 'DECLARE_ATTACK'
+  attackerId: string   // Bear doing the attacking
+  defenderId: string   // Bear being attacked (must be adjacent)
+  playerId: string     // Player making the attack
+}
+
+export interface RespondToAttackAction extends GameAction {
+  type: 'RESPOND_TO_ATTACK'
+  defenderId: string   // Bear responding
+  playerId: string     // Defending player
+  response: 'fight' | 'flee'
 }
 
 /**
@@ -294,6 +313,9 @@ export type AnyGameAction =
   | JoinArenaAction
   | CommitEnergyAction
   | ResolveArenaAction
+  | ClearArenaAction
+  | DeclareAttackAction
+  | RespondToAttackAction
 
 /**
  * Action Handler - Function that processes an action
@@ -334,40 +356,30 @@ export class ActionDispatcher {
     if (season === 'Winter') {
       return null
     }
-    
-    // Base harvest amounts by season and biome
-    const harvestTable: Record<string, Record<string, { grains: number; berries: number; salmon: number; honey: number }>> = {
-      Spring: {
-        Pastures: { grains: 2, berries: 0, salmon: 0, honey: 0 },
-        Forests: { grains: 0, berries: 1, salmon: 0, honey: 0 },
-        Riverlands: { grains: 0, berries: 0, salmon: 1, honey: 0 },
-        Mountains: { grains: 0, berries: 0, salmon: 0, honey: 0 }
-      },
-      Summer: {
-        Pastures: { grains: 3, berries: 0, salmon: 0, honey: 0 },
-        Forests: { grains: 0, berries: 2, salmon: 0, honey: space.hasHoney ? 1 : 0 },
-        Riverlands: { grains: 0, berries: 0, salmon: 3, honey: 0 },
-        Mountains: { grains: 0, berries: 0, salmon: 0, honey: 0 }
-      },
-      Autumn: {
-        Pastures: { grains: 4, berries: 0, salmon: 0, honey: 0 },
-        Forests: { grains: 0, berries: 3, salmon: 0, honey: space.hasHoney ? 2 : 0 },
-        Riverlands: { grains: 0, berries: 0, salmon: 2, honey: 0 },
-        Mountains: { grains: 0, berries: 0, salmon: 0, honey: 0 }
-      }
-    }
-    
-    const seasonHarvest = harvestTable[season]
+
+    // Get harvest table from config
+    const harvestTable = getHarvestTableConfig()
+    const seasonHarvest = harvestTable[season as keyof typeof harvestTable]
     if (!seasonHarvest) {
       return null
     }
-    
-    const biomeHarvest = seasonHarvest[space.quadrant]
+
+    const biomeHarvest = seasonHarvest[space.quadrant as keyof typeof seasonHarvest]
     if (!biomeHarvest) {
       return null
     }
-    
-    return biomeHarvest
+
+    // Handle honey bonus for honey spaces (honeyBonus field in config)
+    const honey = space.hasHoney && 'honeyBonus' in biomeHarvest
+      ? (biomeHarvest.honeyBonus || 0)
+      : (biomeHarvest.honey || 0)
+
+    return {
+      grains: biomeHarvest.grains,
+      berries: biomeHarvest.berries,
+      salmon: biomeHarvest.salmon,
+      honey
+    }
   }
   
   /**
@@ -549,18 +561,29 @@ export class ActionDispatcher {
       if (toSpace.piece) {
         return { success: false, state, error: 'Destination space is occupied' }
       }
-      
-      // Calculate movement energy cost based on fat level
+
+      // Calculate movement energy cost based on fat level and season
       const fat = piece.fat || 0
+      const movementConfig = getMovementConfig()
+      const combatConfig = getCombatConfig()
+      const seasonCosts = movementConfig.bySeason[state.season]
+      const { low: lowThreshold, medium: mediumThreshold } = movementConfig.fatThresholds
+
       let movementCost: number
-      if (fat <= 5) {
-        movementCost = 1
-      } else if (fat <= 15) {
-        movementCost = 2
+      if (fat <= lowThreshold) {
+        movementCost = seasonCosts.lowFat
+      } else if (fat <= mediumThreshold) {
+        movementCost = seasonCosts.mediumFat
       } else {
-        movementCost = 3
+        movementCost = seasonCosts.highFat
       }
-      
+
+      // Apply flee multiplier if this bear is fleeing (first move after choosing flee)
+      const isFleeing = !!piece.fleeingFrom
+      if (isFleeing) {
+        movementCost = movementCost * combatConfig.fleeFirstMoveCostMultiplier
+      }
+
       // Check if piece has enough energy to move
       if (piece.energy < movementCost) {
         return { 
@@ -571,17 +594,18 @@ export class ActionDispatcher {
       }
       
       // Update players with moved piece and reduced energy
-      const updatedPlayers = state.players.map(p => 
+      const updatedPlayers = state.players.map(p =>
         p.pieces.some(playerPiece => playerPiece.id === piece.id)
           ? {
               ...p,
-              pieces: p.pieces.map(playerPiece => 
+              pieces: p.pieces.map(playerPiece =>
                 playerPiece.id === piece.id
-                  ? { 
-                      ...playerPiece, 
-                      spaceId: action.toSpaceId, 
+                  ? {
+                      ...playerPiece,
+                      spaceId: action.toSpaceId,
                       energy: playerPiece.energy - movementCost,
-                      movedThisTurn: true // Still set this for harvest rules, but ignore during movement phase
+                      movedThisTurn: true, // Still set this for harvest rules, but ignore during movement phase
+                      fleeingFrom: undefined // Clear flee status after first move
                     }
                   : playerPiece
               )
@@ -751,32 +775,37 @@ export class ActionDispatcher {
     
     this.registerHandler('EAT_RESOURCE', (state, action) => {
       if (action.type !== 'EAT_RESOURCE') return { success: false, state, error: 'Wrong action type' }
-      
+
       const newState = { ...state, lastUpdated: Date.now() }
       const piece = CoreGameStateUtils.getPiece(state, action.pieceId)
-      
+
       if (!piece) {
         return { success: false, state, error: 'Piece not found' }
       }
-      
+
       // Check if player has enough resources
       if (piece.resources[action.resourceType] < action.amount) {
         return { success: false, state, error: 'Not enough resources' }
       }
-      
-      // Calculate conversion based on type
+
+      // Resource conversion rates - how much energy/fat you get per unit of resource
+      // Get conversion rates from config
+      const conversionConfig = getResourceConversionConfig()
+      const rate = conversionConfig[action.resourceType as keyof typeof conversionConfig] || { energy: 1, fat: 1 }
+
+      // Calculate conversion based on type and resource-specific rates
       let energyGain = 0
       let fatGain = 0
       let maxValue = 0
       let currentValue = 0
-      
+
       if (action.conversionType === 'energy') {
-        energyGain = action.amount
-        maxValue = ENERGY_CONSTANTS.MAX_ENERGY
+        energyGain = action.amount * rate.energy
+        maxValue = getEnergyConfig().maxEnergy
         currentValue = piece.energy
       } else {
-        fatGain = action.amount
-        maxValue = ENERGY_CONSTANTS.MAX_FAT
+        fatGain = action.amount * rate.fat
+        maxValue = getEnergyConfig().maxFat
         currentValue = piece.fat
       }
       
@@ -802,8 +831,8 @@ export class ActionDispatcher {
                         ...playerPiece.resources,
                         [action.resourceType]: playerPiece.resources[action.resourceType] - action.amount
                       },
-                      energy: Math.min(playerPiece.energy + energyGain, ENERGY_CONSTANTS.MAX_ENERGY),
-                      fat: Math.min(playerPiece.fat + fatGain, ENERGY_CONSTANTS.MAX_FAT)
+                      energy: Math.min(playerPiece.energy + energyGain, getEnergyConfig().maxEnergy),
+                      fat: Math.min(playerPiece.fat + fatGain, getEnergyConfig().maxFat)
                     }
                   : playerPiece
               )
@@ -905,7 +934,7 @@ export class ActionDispatcher {
       }
       
       // Check if we need to advance season after TURNS_PER_SEASON rounds (not turns)
-      const shouldAdvanceSeason = isRoundComplete && (newState.round % SEASON_CONSTANTS.TURNS_PER_SEASON === 0)
+      const shouldAdvanceSeason = isRoundComplete && (newState.round % getSeasonsConfig().turnsPerSeason === 0)
       let message = `Advanced to turn ${newState.turn}${isRoundComplete ? ` (round ${newState.round})` : ''}`
       
       console.log(`📊 TURN TRACKING:`)
@@ -929,21 +958,30 @@ export class ActionDispatcher {
     })
     
     this.registerHandler('ADVANCE_PHASE', (state) => {
+      // Block advancement from movement phase if energy tax hasn't been paid
+      if (state.turnPhase === 'movement' && !state.energyTaxPaid) {
+        return {
+          success: false,
+          state,
+          error: 'Must pay energy tax before advancing from movement phase'
+        }
+      }
+
       const phases: TurnPhase[] = ['movement', 'harvest', 'eat', 'hibernation']
       const currentPhaseIndex = phases.indexOf(state.turnPhase)
       const nextPhaseIndex = (currentPhaseIndex + 1) % phases.length
-      
-      const newState = { 
-        ...state, 
+
+      const newState = {
+        ...state,
         turnPhase: phases[nextPhaseIndex],
         lastUpdated: Date.now()
       }
-      
+
       return { success: true, state: newState, newState, message: `Advanced to ${newState.turnPhase} phase` }
     })
     
     this.registerHandler('ADVANCE_SEASON', (state) => {
-      const seasons = SEASON_CONSTANTS.SEASONS
+      const seasons = getSeasonsConfig().order as ('Spring' | 'Summer' | 'Autumn' | 'Winter')[]
       const currentSeasonIndex = seasons.indexOf(state.season)
       const nextSeasonIndex = (currentSeasonIndex + 1) % seasons.length
       const nextSeason = seasons[nextSeasonIndex]
@@ -1161,7 +1199,7 @@ export class ActionDispatcher {
         spaceId,
         type: 'bear' as const,
         health: 100,
-        energy: ENERGY_CONSTANTS.STARTING_ENERGY,
+        energy: getEnergyConfig().startingEnergy,
         fat: 0,
         emergencyEnergy: 0,
         isHibernating: false,
@@ -1238,35 +1276,91 @@ export class ActionDispatcher {
     
     this.registerHandler('PAY_ENERGY_TAX', (state, action) => {
       if (action.type !== 'PAY_ENERGY_TAX') return { success: false, state, error: 'Wrong action type' }
-      
+
       const { pieceId, playerId } = action
       const piece = CoreGameStateUtils.getPiece(state, pieceId)
       const player = CoreGameStateUtils.getPlayer(state, playerId)
-      
+
       if (!piece) {
         return { success: false, state, error: `Piece ${pieceId} not found` }
       }
-      
+
       if (!player) {
         return { success: false, state, error: `Player ${playerId} not found` }
       }
-      
+
       if (piece.playerId !== playerId) {
         return { success: false, state, error: 'Cannot pay tax for piece belonging to another player' }
       }
-      
+
       // Calculate energy tax cost based on season and location
       const space = CoreGameStateUtils.getSpace(state, piece.spaceId)
-      let energyTaxCost = ENERGY_CONSTANTS.NORMAL_SEASON_COST // Base cost for normal seasons
-      
+      const energyTaxConfig = getEnergyTaxConfig()
+      let energyTaxCost: number
+
       if (state.season === 'Winter') {
+        // Winter has location-dependent costs
         if (space?.quadrant === 'Mountains') {
-          energyTaxCost = ENERGY_CONSTANTS.WINTER_COST_MOUNTAINS // Mountains provide shelter in winter
+          energyTaxCost = energyTaxConfig.bySeason.Winter.mountains // Mountains provide shelter in winter
         } else {
-          energyTaxCost = ENERGY_CONSTANTS.WINTER_COST_OUTSIDE // Harsh survival outside mountains in winter
+          energyTaxCost = energyTaxConfig.bySeason.Winter.outside // Harsh survival outside mountains in winter
+        }
+      } else {
+        // Non-winter seasons have flat costs
+        energyTaxCost = energyTaxConfig.bySeason[state.season]
+      }
+
+      // HIBERNATION BENEFIT: During Winter, hibernating bears GAIN fat instead of paying tax
+      if (state.season === 'Winter' && piece.isHibernating) {
+        // Hibernating bear gains fat equal to what would have been the tax cost
+        const fatGained = energyTaxCost
+        const newFat = (piece.fat || 0) + fatGained
+
+        // Update the piece's fat
+        const updatedPlayers = state.players.map(p =>
+          p.id === playerId
+            ? {
+                ...p,
+                pieces: p.pieces.map(playerPiece =>
+                  playerPiece.id === pieceId
+                    ? {
+                        ...playerPiece,
+                        fat: newFat
+                      }
+                    : playerPiece
+                )
+              }
+            : p
+        )
+
+        // Update board space with updated piece
+        const updatedBoard = space ? {
+          ...state.board,
+          spaces: {
+            ...state.board.spaces,
+            [piece.spaceId]: {
+              ...space,
+              piece: updatedPlayers.find(p => p.id === playerId)?.pieces.find(p => p.id === pieceId) || null
+            }
+          }
+        } : state.board
+
+        const newState = {
+          ...state,
+          players: updatedPlayers,
+          board: updatedBoard,
+          energyTaxPaid: true,
+          lastUpdated: Date.now()
+        }
+
+        return {
+          success: true,
+          state: newState,
+          newState,
+          message: `${player.name}'s hibernating bear gained ${fatGained} fat from restful sleep! 🐻💤`
         }
       }
-      
+
       // Try to pay energy tax with automatic fat conversion if needed
       const conversionResult = convertFatToEnergy(piece.energy, piece.fat, energyTaxCost)
       
@@ -1305,7 +1399,7 @@ export class ActionDispatcher {
       // Build success message
       let taxMessage = `${player.name}'s bear paid ${energyTaxCost} energy tax`
       if (fatUsed > 0) {
-        taxMessage += ` (converted ${fatUsed} fat to ${conversionResult.fatUsed / ENERGY_CONSTANTS.FAT_TO_ENERGY_RATIO} energy)`
+        taxMessage += ` (converted ${fatUsed} fat to ${conversionResult.fatUsed / getEnergyConfig().fatToEnergyRatio} energy)`
       }
       
       // Update the piece's energy and fat
@@ -1541,7 +1635,7 @@ export class ActionDispatcher {
                   ? { 
                       ...playerPiece, 
                       isHibernating: true,
-                      energy: ENERGY_CONSTANTS.HIBERNATION_RESET_ENERGY, // Reset to hibernation energy level
+                      energy: getEnergyConfig().hibernationResetEnergy, // Reset to hibernation energy level
                       fat: remainingFat, // Keep remaining fat for survival
                       emergencyEnergy: 0, // Clear emergency energy
                       resources: { // Clear all resources
@@ -1581,7 +1675,7 @@ export class ActionDispatcher {
         success: true, 
         state: newState, 
         newState, 
-        message: `${player.name}'s bear entered hibernation (consumed ${fatCostToHibernate} fat, reset to ${ENERGY_CONSTANTS.HIBERNATION_RESET_ENERGY} energy, ${remainingFat} fat remaining)` 
+        message: `${player.name}'s bear entered hibernation (consumed ${fatCostToHibernate} fat, reset to ${getEnergyConfig().hibernationResetEnergy} energy, ${remainingFat} fat remaining)` 
       }
     })
     
@@ -1789,13 +1883,13 @@ export class ActionDispatcher {
           energyCommitments: {},
           skillRolls: {},
           phase: 'joining' as const,
-          teams: playerTeams.reduce((acc, playerId) => {
+          teams: playerIds.reduce((acc: Record<string, { bearIds: string[]; totalScore: number }>, playerId: string) => {
             acc[playerId] = {
               bearIds: playerTeams[playerId],
               totalScore: 0
             }
             return acc
-          }, {} as any),
+          }, {}),
           casualties: []
         },
         lastUpdated: Date.now()
@@ -1887,60 +1981,130 @@ export class ActionDispatcher {
     
     this.registerHandler('COMMIT_ENERGY', (state, action) => {
       if (action.type !== 'COMMIT_ENERGY') return { success: false, state, error: 'Wrong action type' }
-      
-      if (!state.arenaState || !['joining', 'committing'].includes(state.arenaState.phase)) {
+
+      const validPhases = ['joining', 'committing', 'attacker_committing', 'defender_committing']
+      if (!state.arenaState || !validPhases.includes(state.arenaState.phase)) {
         return { success: false, state, error: 'Arena not accepting energy commitments' }
       }
-      
+
       const { bearId, energyCommitted, playerId } = action
       const bear = CoreGameStateUtils.getPiece(state, bearId)
-      
+
       if (!bear) {
         return { success: false, state, error: `Bear ${bearId} not found` }
       }
-      
+
       if (bear.playerId !== playerId) {
         return { success: false, state, error: 'Bear does not belong to player' }
       }
-      
+
       if (!state.arenaState.participants.includes(bearId)) {
         return { success: false, state, error: 'Bear is not participating in arena' }
       }
-      
+
       if (energyCommitted < 0 || energyCommitted > bear.energy) {
         return { success: false, state, error: `Invalid energy commitment: ${energyCommitted} (bear has ${bear.energy})` }
       }
-      
-      const newArenaState = {
-        ...state.arenaState,
-        phase: 'committing' as const,
-        energyCommitments: {
-          ...state.arenaState.energyCommitments,
-          [bearId]: energyCommitted
+
+      // Handle attacker/defender sequential commitment
+      const { attackerId, defenderId } = state.arenaState
+
+      // If we have attacker/defender phases (fight response), enforce turn order
+      if (state.arenaState.phase === 'attacker_committing') {
+        if (bearId !== attackerId) {
+          return { success: false, state, error: 'Attacker must commit first' }
+        }
+        // Attacker committed - transition to defender phase
+        const newArenaState = {
+          ...state.arenaState,
+          phase: 'defender_committing' as const,
+          energyCommitments: {
+            ...state.arenaState.energyCommitments,
+            [bearId]: energyCommitted
+          }
+        }
+
+        const newState = {
+          ...state,
+          arenaState: newArenaState,
+          lastUpdated: Date.now()
+        }
+
+        return {
+          success: true,
+          state: newState,
+          newState,
+          message: `Attacker committed ${energyCommitted} energy. Defender's turn to respond.`
         }
       }
-      
+
+      if (state.arenaState.phase === 'defender_committing') {
+        if (bearId !== defenderId) {
+          return { success: false, state, error: 'Defender must commit now' }
+        }
+        // Defender committed - transition to revealing (ready to resolve)
+        const newArenaState = {
+          ...state.arenaState,
+          phase: 'revealing' as const,
+          energyCommitments: {
+            ...state.arenaState.energyCommitments,
+            [bearId]: energyCommitted
+          }
+        }
+
+        const newState = {
+          ...state,
+          arenaState: newArenaState,
+          lastUpdated: Date.now()
+        }
+
+        return {
+          success: true,
+          state: newState,
+          newState,
+          message: `Defender committed ${energyCommitted} energy. Ready to resolve combat!`
+        }
+      }
+
+      // Legacy behavior for joining phases (multi-bear arena) - transition to revealing when all committed
+      const updatedCommitments = {
+        ...state.arenaState.energyCommitments,
+        [bearId]: energyCommitted
+      }
+
+      // Check if all participants have committed
+      const allCommitted = state.arenaState.participants.every(
+        (id: string) => id in updatedCommitments
+      )
+
+      const newArenaState = {
+        ...state.arenaState,
+        phase: allCommitted ? 'revealing' as const : state.arenaState.phase,
+        energyCommitments: updatedCommitments
+      }
+
       const newState = {
         ...state,
         arenaState: newArenaState,
         lastUpdated: Date.now()
       }
-      
-      return { 
-        success: true, 
-        state: newState, 
-        newState, 
-        message: `Energy committed for ${bearId} (hidden until reveal)` 
+
+      return {
+        success: true,
+        state: newState,
+        newState,
+        message: `Energy committed for ${bearId} (hidden until reveal)`
       }
     })
     
     this.registerHandler('RESOLVE_ARENA', (state, action) => {
       if (action.type !== 'RESOLVE_ARENA') return { success: false, state, error: 'Wrong action type' }
-      
-      if (!state.arenaState || state.arenaState.phase !== 'committing') {
-        return { success: false, state, error: 'Arena not ready for resolution' }
+
+      // Accept 'revealing' phase (new flow) for resolution
+      if (!state.arenaState || state.arenaState.phase !== 'revealing') {
+        return { success: false, state, error: 'Arena not ready for resolution - all combatants must commit energy first' }
       }
-      
+
       // Check that all participants have committed energy
       for (const bearId of state.arenaState.participants) {
         if (!(bearId in state.arenaState.energyCommitments)) {
@@ -2082,15 +2246,406 @@ export class ActionDispatcher {
         lastUpdated: Date.now()
       }
       
-      return { 
-        success: true, 
-        state: newState, 
-        newState, 
-        message: `Arena resolved: ${winnerMessage} ${casualties.length} casualties.` 
+      return {
+        success: true,
+        state: newState,
+        newState,
+        message: `Arena resolved: ${winnerMessage} ${casualties.length} casualties.`
+      }
+    })
+
+    // ============================================
+    // CLEAR_ARENA - Close arena panel and return to game
+    // ============================================
+    this.registerHandler('CLEAR_ARENA', (state, action) => {
+      if (action.type !== 'CLEAR_ARENA') return { success: false, state, error: 'Wrong action type' }
+
+      if (!state.arenaState) {
+        return { success: false, state, error: 'No arena to clear' }
+      }
+
+      // Update board to reflect any piece removals (casualties already handled in RESOLVE_ARENA)
+      // Also need to sync board spaces with current player pieces
+      const updatedBoard = { ...state.board, spaces: { ...state.board.spaces } }
+
+      // Clear all spaces first, then repopulate from player pieces
+      Object.keys(updatedBoard.spaces).forEach(spaceId => {
+        updatedBoard.spaces[spaceId] = {
+          ...updatedBoard.spaces[spaceId],
+          piece: null
+        }
+      })
+
+      // Repopulate board spaces from player pieces
+      state.players.forEach(player => {
+        player.pieces.forEach(piece => {
+          if (updatedBoard.spaces[piece.spaceId]) {
+            updatedBoard.spaces[piece.spaceId] = {
+              ...updatedBoard.spaces[piece.spaceId],
+              piece
+            }
+          }
+        })
+      })
+
+      const newState = {
+        ...state,
+        board: updatedBoard,
+        arenaState: undefined,
+        lastUpdated: Date.now()
+      }
+
+      return {
+        success: true,
+        state: newState,
+        newState,
+        message: 'Arena combat concluded. Returning to game.'
+      }
+    })
+
+    // ============================================
+    // DECLARE_ATTACK - Attacker declares attack on adjacent enemy bear
+    // This replaces harvest for the turn and ends attacker's turn
+    // ============================================
+    this.registerHandler('DECLARE_ATTACK', (state, action) => {
+      if (action.type !== 'DECLARE_ATTACK') return { success: false, state, error: 'Wrong action type' }
+
+      const { attackerId, defenderId, playerId } = action
+      const combatConfig = getCombatConfig()
+
+      // Validate attacker exists and belongs to player
+      const attacker = CoreGameStateUtils.getPiece(state, attackerId)
+      if (!attacker) {
+        return { success: false, state, error: 'Attacker bear not found' }
+      }
+      if (attacker.playerId !== playerId) {
+        return { success: false, state, error: 'Cannot attack with another player\'s bear' }
+      }
+
+      // Validate defender exists and is an enemy
+      const defender = CoreGameStateUtils.getPiece(state, defenderId)
+      if (!defender) {
+        return { success: false, state, error: 'Defender bear not found' }
+      }
+      if (defender.playerId === playerId) {
+        return { success: false, state, error: 'Cannot attack your own bear' }
+      }
+
+      // Validate adjacency
+      const attackerSpace = CoreGameStateUtils.getSpace(state, attacker.spaceId)
+      if (!attackerSpace || !attackerSpace.adjacentSpaces.includes(defender.spaceId)) {
+        return { success: false, state, error: 'Can only attack adjacent bears' }
+      }
+
+      // Validate attacker has enough energy for attack cost
+      if (attacker.energy < combatConfig.attackCost) {
+        return { success: false, state, error: `Not enough energy to attack (need ${combatConfig.attackCost})` }
+      }
+
+      // Validate it's the harvest phase (attack replaces harvest)
+      if (state.turnPhase !== 'harvest') {
+        return { success: false, state, error: 'Can only declare attack during harvest phase' }
+      }
+
+      // Validate this bear hasn't already attacked this turn
+      if (attacker.isAttacking) {
+        return { success: false, state, error: 'This bear has already declared an attack' }
+      }
+
+      // Validate defender isn't already being attacked
+      if (defender.attackedBy) {
+        return { success: false, state, error: 'This bear is already under attack' }
+      }
+
+      // Apply attack: deduct energy, mark both bears
+      const updatedPlayers = state.players.map(player => ({
+        ...player,
+        pieces: player.pieces.map(piece => {
+          if (piece.id === attackerId) {
+            return {
+              ...piece,
+              energy: piece.energy - combatConfig.attackCost,
+              isAttacking: defenderId,
+              harvestedThisTurn: true // Mark as harvested so they can't also harvest
+            }
+          }
+          if (piece.id === defenderId) {
+            return {
+              ...piece,
+              attackedBy: attackerId
+            }
+          }
+          return piece
+        })
+      }))
+
+      // After declaring attack, immediately end the attacker's turn
+      // Calculate next player index
+      const currentPlayerIndex = state.currentPlayerIndex
+      const nextPlayerIndex = (currentPlayerIndex + 1) % state.players.length
+
+      // Check if we need to advance the turn counter (full round completed)
+      const isFullRoundComplete = nextPlayerIndex === 0
+      const newTurn = isFullRoundComplete ? state.turn + 1 : state.turn
+
+      // Check for season change (every turnsPerSeason turns)
+      const turnsPerSeason = 5 // Default, could pull from config
+      const seasonOrder = ['Spring', 'Summer', 'Autumn', 'Winter'] as const
+      const currentSeasonIndex = seasonOrder.indexOf(state.season)
+      const shouldChangeSeason = isFullRoundComplete && (newTurn % turnsPerSeason === 1) && newTurn > 1
+      const newSeasonIndex = shouldChangeSeason ? (currentSeasonIndex + 1) % 4 : currentSeasonIndex
+      const newSeason = seasonOrder[newSeasonIndex]
+
+      // Check for year change
+      const newYear = shouldChangeSeason && newSeasonIndex === 0 && newTurn > 1
+        ? state.year + 1
+        : state.year
+
+      // Reset all bears' turn state flags for the new turn
+      const playersWithResetTurnState = updatedPlayers.map((player, playerIdx) => ({
+        ...player,
+        pieces: player.pieces.map(piece => ({
+          ...piece,
+          movedThisTurn: false,
+          harvestedThisTurn: playerIdx === nextPlayerIndex ? false : piece.harvestedThisTurn
+        }))
+      }))
+
+      // Update board spaces with the updated piece data (attackedBy, isAttacking)
+      const updatedBoard = { ...state.board, spaces: { ...state.board.spaces } }
+      for (const player of playersWithResetTurnState) {
+        for (const piece of player.pieces) {
+          if (updatedBoard.spaces[piece.spaceId]?.piece?.id === piece.id) {
+            updatedBoard.spaces[piece.spaceId] = {
+              ...updatedBoard.spaces[piece.spaceId],
+              piece: piece
+            }
+          }
+        }
+      }
+
+      const newState = {
+        ...state,
+        players: playersWithResetTurnState,
+        board: updatedBoard,
+        currentPlayerIndex: nextPlayerIndex,
+        turn: newTurn,
+        year: newYear,
+        season: newSeason,
+        turnPhase: 'movement' as const, // Reset to movement phase for next player
+        energyTaxPaid: false, // Next player needs to pay tax
+        lastUpdated: Date.now()
+      }
+
+      const attackerPlayer = state.players.find(p => p.id === playerId)
+      const defenderPlayer = state.players.find(p => p.id === defender.playerId)
+
+      return {
+        success: true,
+        state: newState,
+        newState,
+        message: `${attackerPlayer?.name}'s bear declared attack on ${defenderPlayer?.name}'s bear! Turn ended. Defender must respond after paying energy tax.`
+      }
+    })
+
+    // ============================================
+    // RESPOND_TO_ATTACK - Defender chooses fight or flee
+    // This happens at the start of defender's turn, AFTER energy tax is paid
+    // ============================================
+    this.registerHandler('RESPOND_TO_ATTACK', (state, action) => {
+      if (action.type !== 'RESPOND_TO_ATTACK') return { success: false, state, error: 'Wrong action type' }
+
+      const { defenderId, playerId, response } = action
+      const combatConfig = getCombatConfig()
+
+      // Validate defender exists and belongs to player
+      const defender = CoreGameStateUtils.getPiece(state, defenderId)
+      if (!defender) {
+        return { success: false, state, error: 'Defender bear not found' }
+      }
+      if (defender.playerId !== playerId) {
+        return { success: false, state, error: 'Cannot respond for another player\'s bear' }
+      }
+
+      // Validate this bear is actually under attack
+      if (!defender.attackedBy) {
+        return { success: false, state, error: 'This bear is not under attack' }
+      }
+
+      // Validate energy tax has been paid first
+      if (!state.energyTaxPaid) {
+        return { success: false, state, error: 'Must pay energy tax before responding to attack' }
+      }
+
+      const attackerId = defender.attackedBy
+      const attacker = CoreGameStateUtils.getPiece(state, attackerId)
+      if (!attacker) {
+        // Attacker died somehow, clear the attack
+        const updatedPlayers = state.players.map(player => ({
+          ...player,
+          pieces: player.pieces.map(piece =>
+            piece.id === defenderId
+              ? { ...piece, attackedBy: undefined }
+              : piece
+          )
+        }))
+        return {
+          success: true,
+          state: { ...state, players: updatedPlayers, lastUpdated: Date.now() },
+          newState: { ...state, players: updatedPlayers, lastUpdated: Date.now() },
+          message: 'Attack cancelled - attacker no longer exists'
+        }
+      }
+
+      if (response === 'fight') {
+        // FIGHT: Start arena combat between attacker and defender
+        // Both bears move to the same space (defender's space) and arena starts
+        const defenderSpace = defender.spaceId
+        const attackerOldSpace = attacker.spaceId
+
+        // Build initial arena state
+        const attackerPlayerId = attacker.playerId
+        const defenderPlayerId = defender.playerId
+
+        // Update players with piece changes
+        const updatedPlayers = state.players.map(player => ({
+          ...player,
+          pieces: player.pieces.map(piece => {
+            if (piece.id === attackerId) {
+              // Move attacker to defender's space, clear attack flags
+              return {
+                ...piece,
+                spaceId: defenderSpace,
+                isAttacking: undefined,
+                attackedBy: undefined
+              }
+            }
+            if (piece.id === defenderId) {
+              // Clear attack flags
+              return {
+                ...piece,
+                attackedBy: undefined
+              }
+            }
+            return piece
+          })
+        }))
+
+        // Get updated defender piece for board sync
+        const updatedDefender = updatedPlayers
+          .flatMap(p => p.pieces)
+          .find(p => p.id === defenderId)
+
+        // Update board spaces to reflect piece movements
+        const updatedBoard = { ...state.board, spaces: { ...state.board.spaces } }
+
+        // Clear attacker's old space
+        if (updatedBoard.spaces[attackerOldSpace]) {
+          updatedBoard.spaces[attackerOldSpace] = {
+            ...updatedBoard.spaces[attackerOldSpace],
+            piece: null
+          }
+        }
+
+        // Update defender's space - now has both pieces in arena (use defender as primary display)
+        if (updatedBoard.spaces[defenderSpace] && updatedDefender) {
+          updatedBoard.spaces[defenderSpace] = {
+            ...updatedBoard.spaces[defenderSpace],
+            piece: updatedDefender
+          }
+        }
+
+        const newState = {
+          ...state,
+          players: updatedPlayers,
+          board: updatedBoard,
+          arenaState: {
+            spaceId: defenderSpace,
+            participants: [attackerId, defenderId],
+            attackerId: attackerId,      // Attacker commits first
+            defenderId: defenderId,      // Defender sees attacker's commitment, then commits
+            energyCommitments: {},
+            skillRolls: {},
+            phase: 'attacker_committing' as const,  // Start with attacker committing
+            teams: {
+              [attackerPlayerId]: {
+                bearIds: [attackerId],
+                totalScore: 0
+              },
+              [defenderPlayerId]: {
+                bearIds: [defenderId],
+                totalScore: 0
+              }
+            },
+            casualties: []
+          },
+          lastUpdated: Date.now()
+        }
+
+        const attackerPlayer = state.players.find(p => p.id === attackerPlayerId)
+        const defenderPlayer = state.players.find(p => p.id === defenderPlayerId)
+
+        return {
+          success: true,
+          state: newState,
+          newState,
+          message: `${defenderPlayer?.name}'s bear stands and fights! Arena combat begins between ${attackerPlayer?.name} and ${defenderPlayer?.name}.`
+        }
+
+      } else {
+        // FLEE: Defender's first move costs 2x, mark as fleeing
+        const updatedPlayers = state.players.map(player => ({
+          ...player,
+          pieces: player.pieces.map(piece => {
+            if (piece.id === defenderId) {
+              return {
+                ...piece,
+                attackedBy: undefined,
+                fleeingFrom: attackerId // First move costs 2x
+              }
+            }
+            if (piece.id === attackerId) {
+              return {
+                ...piece,
+                isAttacking: undefined
+              }
+            }
+            return piece
+          })
+        }))
+
+        // Sync board spaces with updated piece data
+        const updatedBoard = { ...state.board, spaces: { ...state.board.spaces } }
+        for (const player of updatedPlayers) {
+          for (const piece of player.pieces) {
+            if (updatedBoard.spaces[piece.spaceId]?.piece?.id === piece.id) {
+              updatedBoard.spaces[piece.spaceId] = {
+                ...updatedBoard.spaces[piece.spaceId],
+                piece: piece
+              }
+            }
+          }
+        }
+
+        const newState = {
+          ...state,
+          players: updatedPlayers,
+          board: updatedBoard,
+          lastUpdated: Date.now()
+        }
+
+        const defenderPlayer = state.players.find(p => p.id === playerId)
+
+        return {
+          success: true,
+          state: newState,
+          newState,
+          message: `${defenderPlayer?.name}'s bear flees! First move costs ${combatConfig.fleeFirstMoveCostMultiplier}x energy.`
+        }
       }
     })
   }
-  
+
   /**
    * Register default action validators
    */
@@ -2156,27 +2711,31 @@ export class ActionDispatcher {
         return { valid: false, reason: 'Piece not at specified location' }
       }
       
-      // Calculate movement energy cost and check if piece has enough energy
+      // Calculate movement energy cost based on fat level and season
       const fat = piece.fat || 0
+      const movementConfig = getMovementConfig()
+      const seasonCosts = movementConfig.bySeason[state.season]
+      const { low: lowThreshold, medium: mediumThreshold } = movementConfig.fatThresholds
+
       let movementCost: number
-      if (fat <= 5) {
-        movementCost = 1
-      } else if (fat <= 15) {
-        movementCost = 2
+      if (fat <= lowThreshold) {
+        movementCost = seasonCosts.lowFat
+      } else if (fat <= mediumThreshold) {
+        movementCost = seasonCosts.mediumFat
       } else {
-        movementCost = 3
+        movementCost = seasonCosts.highFat
       }
-      
+
       if (piece.energy < movementCost) {
-        return { 
-          valid: false, 
-          reason: `Insufficient energy to move: need ${movementCost}, have ${piece.energy}` 
+        return {
+          valid: false,
+          reason: `Insufficient energy to move: need ${movementCost}, have ${piece.energy}`
         }
       }
-      
+
       return { valid: true }
     })
-    
+
     this.registerValidator('PLACE_PIECE', (state, action) => {
       if (action.type !== 'PLACE_PIECE') return { valid: true }
       

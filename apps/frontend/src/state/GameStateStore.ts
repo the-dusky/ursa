@@ -425,7 +425,29 @@ export const useGameActions = () => {
       dispatch.dispatch({
         type: 'RESOLVE_ARENA'
       }),
-      
+
+    clearArena: () =>
+      dispatch.dispatch({
+        type: 'CLEAR_ARENA'
+      }),
+
+    // Adjacent Attack Actions (Fight or Flight mechanic)
+    declareAttack: (attackerId: string, defenderId: string, playerId: string) =>
+      dispatch.dispatch({
+        type: 'DECLARE_ATTACK',
+        attackerId,
+        defenderId,
+        playerId
+      }),
+
+    respondToAttack: (defenderId: string, playerId: string, response: 'fight' | 'flee') =>
+      dispatch.dispatch({
+        type: 'RESPOND_TO_ATTACK',
+        defenderId,
+        playerId,
+        response
+      }),
+
     updateBoardRotations: (rotations: number[]) => {
       // Update the board with new rotations
       const currentState = useGameStateStore.getState().gameState

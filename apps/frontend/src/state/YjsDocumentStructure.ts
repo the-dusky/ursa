@@ -183,7 +183,12 @@ export function pieceToYjs(piece: GamePiece): Y.Map<any> {
   pieceMap.set('movedThisTurn', piece.movedThisTurn)
   pieceMap.set('harvestedThisTurn', piece.harvestedThisTurn)
   pieceMap.set('bearTurn', piece.bearTurn)
-  
+
+  // Combat state
+  pieceMap.set('attackedBy', piece.attackedBy)
+  pieceMap.set('isAttacking', piece.isAttacking)
+  pieceMap.set('fleeingFrom', piece.fleeingFrom)
+
   // Resources as Y.Map
   const resources = new Y.Map()
   resources.set('grains', piece.resources.grains)
@@ -284,6 +289,10 @@ export function yjsToPiece(pieceMap: Y.Map<any>): GamePiece {
     movedThisTurn: pieceMap.get('movedThisTurn') ?? false,
     harvestedThisTurn: pieceMap.get('harvestedThisTurn') ?? false,
     bearTurn: pieceMap.get('bearTurn') ?? 0,
+    // Combat state
+    attackedBy: pieceMap.get('attackedBy'),
+    isAttacking: pieceMap.get('isAttacking'),
+    fleeingFrom: pieceMap.get('fleeingFrom'),
     resources: {
       grains: resourcesMap?.get('grains') ?? 0,
       berries: resourcesMap?.get('berries') ?? 0,
@@ -403,6 +412,35 @@ export function syncStateToYjs(yjsDoc: YjsGameDocument, state: CoreGameState): v
     
     // Update dice state
     updateDiceStateToYjs(yjsDoc.diceState, state.diceState)
+
+    // Update bear placement state
+    if (state.bearPlacementState) {
+      yjsDoc.gameState.set('bearPlacementState', {
+        currentPlayerIndex: state.bearPlacementState.currentPlayerIndex,
+        playersRemaining: [...state.bearPlacementState.playersRemaining],
+        isComplete: state.bearPlacementState.isComplete
+      })
+    } else {
+      yjsDoc.gameState.set('bearPlacementState', null)
+    }
+
+    // Update arena state
+    if (state.arenaState) {
+      yjsDoc.gameState.set('arenaState', {
+        spaceId: state.arenaState.spaceId,
+        participants: [...state.arenaState.participants],
+        attackerId: state.arenaState.attackerId,
+        defenderId: state.arenaState.defenderId,
+        energyCommitments: { ...state.arenaState.energyCommitments },
+        skillRolls: { ...state.arenaState.skillRolls },
+        phase: state.arenaState.phase,
+        teams: { ...state.arenaState.teams },
+        winner: state.arenaState.winner,
+        casualties: [...state.arenaState.casualties]
+      })
+    } else {
+      yjsDoc.gameState.set('arenaState', null)
+    }
   })
 }
 
@@ -512,7 +550,31 @@ export function yjsToGameState(yjsDoc: YjsGameDocument): CoreGameState | null {
         bridges: {}, // TODO: Implement bridges in Y.js
         rotations
       },
-      diceState
+      diceState,
+
+      // Bear placement state if present
+      bearPlacementState: yjsDoc.gameState.get('bearPlacementState') ? {
+        currentPlayerIndex: yjsDoc.gameState.get('bearPlacementState').currentPlayerIndex ?? 0,
+        playersRemaining: yjsDoc.gameState.get('bearPlacementState').playersRemaining ?? [],
+        isComplete: yjsDoc.gameState.get('bearPlacementState').isComplete ?? false
+      } : undefined,
+
+      // Arena combat state if present
+      arenaState: yjsDoc.gameState.get('arenaState') ? (() => {
+        const arena = yjsDoc.gameState.get('arenaState')
+        return {
+          spaceId: arena.spaceId ?? '',
+          participants: arena.participants ?? [],
+          attackerId: arena.attackerId,
+          defenderId: arena.defenderId,
+          energyCommitments: arena.energyCommitments ?? {},
+          skillRolls: arena.skillRolls ?? {},
+          phase: arena.phase ?? 'joining',
+          teams: arena.teams ?? {},
+          winner: arena.winner,
+          casualties: arena.casualties ?? []
+        }
+      })() : undefined
     }
   } catch (error) {
     console.error('Error reconstructing game state from Y.js:', error)

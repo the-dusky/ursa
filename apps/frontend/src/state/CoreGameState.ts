@@ -95,9 +95,12 @@ export interface CoreGameState extends EngineGameState {
   arenaState?: {
     spaceId: string                    // Where the combat is happening
     participants: string[]             // Bear IDs participating in combat
-    energyCommitments: { [bearId: string]: number }  // Hidden energy commitments
+    attackerId?: string                // Bear who initiated the attack (commits first) - only for fight-or-flight
+    defenderId?: string                // Bear who is defending (sees attacker's commitment) - only for fight-or-flight
+    energyCommitments: { [bearId: string]: number }  // Energy commitments (attacker's shown to defender)
     skillRolls: { [bearId: string]: number[] }       // 5 dice rolls per bear
-    phase: 'joining' | 'committing' | 'revealing' | 'resolved'
+    // Phases: 'joining' for multi-bear arena, 'attacker_committing'/'defender_committing' for fight-or-flight
+    phase: 'joining' | 'attacker_committing' | 'defender_committing' | 'revealing' | 'resolved'
     teams: {
       [playerId: string]: {
         bearIds: string[]
@@ -227,7 +230,11 @@ export const CoreGameStateUtils = {
           isHibernating: piece.isHibernating,
           movedThisTurn: piece.movedThisTurn,
           harvestedThisTurn: piece.harvestedThisTurn,
-          bearTurn: piece.bearTurn
+          bearTurn: piece.bearTurn,
+          // Combat state
+          attackedBy: piece.attackedBy,
+          isAttacking: piece.isAttacking,
+          fleeingFrom: piece.fleeingFrom
         }))
       })),
       
@@ -260,7 +267,11 @@ export const CoreGameStateUtils = {
                 isHibernating: space.piece.isHibernating,
                 movedThisTurn: space.piece.movedThisTurn,
                 harvestedThisTurn: space.piece.harvestedThisTurn,
-                bearTurn: space.piece.bearTurn
+                bearTurn: space.piece.bearTurn,
+                // Combat state
+                attackedBy: space.piece.attackedBy,
+                isAttacking: space.piece.isAttacking,
+                fleeingFrom: space.piece.fleeingFrom
               } : null
             }
           ])
@@ -301,6 +312,27 @@ export const CoreGameStateUtils = {
         currentPlayerIndex: state.bearPlacementState.currentPlayerIndex,
         playersRemaining: [...state.bearPlacementState.playersRemaining],
         isComplete: state.bearPlacementState.isComplete
+      } : undefined,
+
+      // Arena combat state if present
+      arenaState: state.arenaState ? {
+        spaceId: state.arenaState.spaceId,
+        participants: [...state.arenaState.participants],
+        attackerId: state.arenaState.attackerId,
+        defenderId: state.arenaState.defenderId,
+        energyCommitments: { ...state.arenaState.energyCommitments },
+        skillRolls: Object.fromEntries(
+          Object.entries(state.arenaState.skillRolls).map(([id, rolls]) => [id, [...rolls]])
+        ),
+        phase: state.arenaState.phase,
+        teams: Object.fromEntries(
+          Object.entries(state.arenaState.teams).map(([playerId, team]) => [
+            playerId,
+            { bearIds: [...team.bearIds], totalScore: team.totalScore }
+          ])
+        ),
+        winner: state.arenaState.winner,
+        casualties: [...state.arenaState.casualties]
       } : undefined
     }
   },

@@ -31,10 +31,13 @@ export type {
   PieceType
 } from './CoreGameState'
 
-export {
-  createInitialGameState,
-  CoreGameStateUtils
+import {
+  createInitialGameState as _createInitialGameState,
+  CoreGameStateUtils as _CoreGameStateUtils
 } from './CoreGameState'
+
+export const createInitialGameState = _createInitialGameState
+export const CoreGameStateUtils = _CoreGameStateUtils
 
 // State management core
 export type {
@@ -72,39 +75,106 @@ export {
 // Game logic is now built into ActionDispatcher
 
 // React hooks - Game State
-export {
-  useGameStateStore,
-  useGameSelectors,
-  useGameActions,
-  useGameDebug
+import {
+  useGameStateStore as _useGameStateStore,
+  useGameActions as _useGameActions,
+  useGameSelectors as _useGameSelectors,
+  useGameDebug as _useGameDebug
 } from './GameStateStore'
 
+export const useGameStateStore = _useGameStateStore
+export const useGameSelectors = _useGameSelectors
+export const useGameActions = _useGameActions
+export const useGameDebug = _useGameDebug
+
 // React hooks - Multiplayer
-export {
-  useMultiplayerStore,
-  useMultiplayerSelectors,
-  useMultiplayerActions
+import {
+  useMultiplayerStore as _useMultiplayerStore,
+  useMultiplayerSelectors as _useMultiplayerSelectors,
+  useMultiplayerActions as _useMultiplayerActions
 } from './MultiplayerStore'
 
+export const useMultiplayerStore = _useMultiplayerStore
+export const useMultiplayerSelectors = _useMultiplayerSelectors
+export const useMultiplayerActions = _useMultiplayerActions
+
 // React hooks - Coordination
-export {
-  useStateCoordinator,
-  useCoordinatedGameActions,
-  useStateCoordinatorDebug
+import {
+  useStateCoordinator as _useStateCoordinator,
+  useCoordinatedGameActions as _useCoordinatedGameActions,
+  useStateCoordinatorDebug as _useStateCoordinatorDebug
 } from './StateCoordinator'
+
+export const useStateCoordinator = _useStateCoordinator
+export const useCoordinatedGameActions = _useCoordinatedGameActions
+export const useStateCoordinatorDebug = _useStateCoordinatorDebug
 
 /**
  * Main Application Hook - Use this for the complete state system
- * 
+ *
  * This hook sets up the entire state coordination and provides
  * everything you need for both single-player and multiplayer games.
  */
 export function useGameState() {
-  // For now, just return the basic game state store
-  // TODO: Add full coordination when circular imports are resolved
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { useGameStateStore: _useGameStateStore } = require('./GameStateStore')
-  return _useGameStateStore()
+  // Call hooks in consistent order (Rules of Hooks)
+  const store = _useGameStateStore()
+  const gameActions = _useGameActions()
+  const multiplayer = _useMultiplayerStore()
+  const coordinatedActions = _useCoordinatedGameActions()
+
+  // Get selectors directly from store.gameState to avoid extra hook calls
+  const gameState = store.gameState
+
+  return {
+    // Full game state
+    gameState,
+
+    // Convenience selectors (inline to avoid hook order issues)
+    gamePhase: gameState.gamePhase,
+    turnPhase: gameState.turnPhase,
+    season: gameState.season,
+    year: gameState.year,
+    turn: gameState.turn,
+    isGameStarted: gameState.isGameStarted,
+    players: gameState.players,
+    currentPlayerIndex: gameState.currentPlayerIndex,
+    currentPlayer: gameState.players[gameState.currentPlayerIndex] || null,
+    board: gameState.board,
+    spaces: gameState.board.spaces,
+    bridges: gameState.board.bridges,
+    diceState: gameState.diceState,
+    energyTaxPaid: gameState.energyTaxPaid,
+
+    // Utility functions bound to current state
+    utils: {
+      getPiece: (pieceId: string) => _CoreGameStateUtils.getPiece(gameState, pieceId),
+      getSpace: (spaceId: string) => _CoreGameStateUtils.getSpace(gameState, spaceId),
+      getPlayer: (playerId: string) => _CoreGameStateUtils.getPlayer(gameState, playerId),
+      getCurrentPlayer: () => _CoreGameStateUtils.getCurrentPlayer(gameState)
+    },
+
+    // Multiplayer state
+    multiplayer: {
+      isConnected: multiplayer.isConnected,
+      roomId: multiplayer.roomId,
+      playerName: multiplayer.playerName,
+      playerNumber: multiplayer.playerNumber,
+      connectedPlayers: multiplayer.connectedPlayers,
+      roomConfig: multiplayer.roomConfig
+    },
+    isMultiplayer: multiplayer.isConnected,
+
+    // All actions - both game and coordinated
+    actions: {
+      ...gameActions,
+      ...coordinatedActions
+    },
+
+    // Status
+    isLoading: store.isLoading,
+    lastError: store.lastError,
+    isCoordinated: multiplayer.isConnected
+  }
 }
 
 /**

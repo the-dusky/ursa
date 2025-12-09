@@ -17,6 +17,7 @@ import { RulesDialog } from '@/components/game/RulesDialog'
 import { RulesReferenceCard } from '@/components/game/RulesReferenceCard'
 import { GameSetup } from '@/components/game/GameSetup'
 import { BearPlacement } from '@/components/game/BearPlacement'
+import { ArenaPanel } from '@/components/arena/ArenaPanel'
 import { useStateCoordinator } from '@/state/StateCoordinator'
 import { useMultiplayerStore } from '@/state/MultiplayerStore'
 
@@ -163,6 +164,15 @@ function HomeContent() {
 
         {/* Rules Dialog */}
         <RulesDialog />
+
+        {/* Arena Combat Overlay */}
+        {gameState.arenaState && (
+          <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+            <div className="max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+              <ArenaPanel />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
