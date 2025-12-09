@@ -45,3 +45,4 @@ apps/frontend/logs/
 next-env.d.ts
 
 old_reference
+.claude/settings.local.json
