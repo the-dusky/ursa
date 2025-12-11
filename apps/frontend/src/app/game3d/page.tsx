@@ -33,16 +33,13 @@ export default function Game3DPage() {
   const [initialized, setInitialized] = useState(false)
   const [isRolling, setIsRolling] = useState(false)
   const [showArena, setShowArena] = useState(false)
+  const [showSpaceIds, setShowSpaceIds] = useState(false)
 
   // Initialize board for preview if no game started
   useEffect(() => {
     if (!initialized && Object.keys(board.spaces).length === 0) {
-      // Initialize the game with a sample configuration for preview
-      actions.initializeGame?.({
-        playerCount: 2,
-        playerNames: ['Player 1', 'Player 2'],
-        playerColors: ['#ef4444', '#3b82f6']
-      })
+      // Initialize the game with 4 players for preview
+      actions.initializeGame?.(4)
       setInitialized(true)
     }
   }, [initialized, board.spaces, actions])
@@ -96,7 +93,7 @@ export default function Game3DPage() {
             </div>
           }
         >
-          <GameTable3D debug={false} showArena={showArena} />
+          <GameTable3D debug={false} showArena={showArena} showSpaceIds={showSpaceIds} />
         </Suspense>
       </main>
 
@@ -141,6 +138,17 @@ export default function Game3DPage() {
           }`}
         >
           {showArena ? 'Hide Arena' : 'Show Arena'}
+        </button>
+
+        <button
+          onClick={() => setShowSpaceIds(!showSpaceIds)}
+          className={`w-full mt-2 py-2 px-4 rounded font-bold transition-colors ${
+            showSpaceIds
+              ? 'bg-green-600 hover:bg-green-500'
+              : 'bg-gray-600 hover:bg-gray-500'
+          }`}
+        >
+          {showSpaceIds ? 'Hide Space IDs' : 'Show Space IDs'}
         </button>
 
         {/* Show dice results */}

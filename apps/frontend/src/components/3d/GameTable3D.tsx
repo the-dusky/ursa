@@ -11,6 +11,8 @@ import { Canvas } from '@react-three/fiber'
 import { OrbitControls, Environment, ContactShadows, PerspectiveCamera } from '@react-three/drei'
 import { Suspense } from 'react'
 import { Board3D } from './Board3D'
+import { PlayerCard3D } from './PlayerCard3D'
+import { GrainPile, BerryPile, SalmonPile, HoneyPile, EnergyPile, FatPile } from './ResourcePiles3D'
 import { useGameState } from '../../state'
 import type { CoreGameState } from '../../state/CoreGameState'
 
@@ -21,6 +23,8 @@ interface GameTable3DProps {
   debug?: boolean
   /** Show the combat arena platform */
   showArena?: boolean
+  /** Show space IDs on the board */
+  showSpaceIds?: boolean
 }
 
 /**
@@ -54,7 +58,7 @@ function TableSurface() {
 /**
  * Main 3D game table component
  */
-export function GameTable3D({ previewState, debug = false, showArena = false }: GameTable3DProps) {
+export function GameTable3D({ previewState, debug = false, showArena = false, showSpaceIds = false }: GameTable3DProps) {
   const { board, players, diceState } = useGameState()
 
   // Use preview state or actual game state
@@ -111,7 +115,62 @@ export function GameTable3D({ previewState, debug = false, showArena = false }: 
             players={gamePlayers}
             rotations={rotations}
             showArena={showArena}
+            showSpaceIds={showSpaceIds}
           />
+
+          {/* Resource piles arranged in a circle around the board */}
+          {(() => {
+            const pileDistance = 9 // Distance from board center
+            const piles = [
+              { Component: GrainPile, angle: Math.PI * 0.85 },
+              { Component: BerryPile, angle: Math.PI * 0.65 },
+              { Component: SalmonPile, angle: Math.PI * 0.35 },
+              { Component: HoneyPile, angle: Math.PI * 0.15 },
+              { Component: EnergyPile, angle: -Math.PI * 0.15 },
+              { Component: FatPile, angle: -Math.PI * 0.35 },
+            ]
+            return piles.map(({ Component, angle }, i) => {
+              const x = Math.sin(angle) * pileDistance
+              const z = Math.cos(angle) * pileDistance
+              return (
+                <Component
+                  key={i}
+                  position={[x, 0.05, z]}
+                  rotation={angle}
+                  scale={3}
+                />
+              )
+            })
+          })()}
+
+          {/* Player cards around the board - laying flat on the table */}
+          {gamePlayers.map((player, index) => {
+            // Position cards around the board at 4 corners
+            const cardDistance = 11 // Distance from board center
+            const angles = [
+              Math.PI * 1,   // Top (N)
+              Math.PI * 0.5,   // Right (E)
+              -Math.PI * 0.0,  // Bottom (S)
+              -Math.PI * 0.5  // Left (W)
+            ]
+            const angle = angles[index % 4]
+            const x = Math.sin(angle) * cardDistance
+            const z = Math.cos(angle) * cardDistance
+
+            // Rotation to face the board center
+            const rotationY = angle
+
+            return (
+              <PlayerCard3D
+                key={player.id}
+                player={player}
+                position={[x, 0.05, z]}
+                rotation={rotationY}
+                tilt={-Math.PI / 2}
+                scale={3}
+              />
+            )
+          })}
 
           {/* Contact shadows for grounding */}
           <ContactShadows

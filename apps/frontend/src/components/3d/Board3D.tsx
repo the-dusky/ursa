@@ -8,12 +8,14 @@
 
 'use client'
 
-import { useRef, useMemo, useState, useEffect } from 'react'
+import { useRef, useMemo, useState } from 'react'
 import * as THREE from 'three'
 import { useFrame } from '@react-three/fiber'
-import { Line } from '@react-three/drei'
+import { Line, Text } from '@react-three/drei'
 import type { GameBoard, Player, GameSpace } from '../../state/CoreGameState'
 import { Bear3D } from './Bear3D'
+import { HoneyJug3D } from './HoneyJug3D'
+import { Cave3D } from './Cave3D'
 
 // Ring configuration matching the game engine
 const RING_CONFIGS = [
@@ -25,12 +27,13 @@ const RING_CONFIGS = [
 ]
 
 // Base colors for each quadrant
-// Layout (clockwise from top): Mountains (top), Riverlands (right), Pastures (bottom), Forests (left)
+// Layout (counter-clockwise from NW): Pastures (W) → Forests (S) → Riverlands (E) → Mountains (N)
+// R1-1 is at NW corner of Pastures, positions increase counter-clockwise
 const QUADRANT_COLORS: { [key: string]: string } = {
-  'Mountains': '#6b7280',  // Gray - top
-  'Riverlands': '#3b82f6', // Blue - right side
-  'Pastures': '#b8860b',   // Dull yellow-brown (wheat field) - bottom
-  'Forests': '#166534',    // Dark green - left
+  'Forests': '#166534',    // Dark green - where honey spawns
+  'Riverlands': '#3b82f6', // Blue
+  'Pastures': '#b8860b',   // Dull yellow-brown (wheat field)
+  'Mountains': '#6b7280',  // Gray
   'Bridge': '#78716c',     // Stone gray
 }
 
@@ -48,6 +51,7 @@ interface Board3DProps {
   players: Player[]
   rotations: number[]
   showArena?: boolean
+  showSpaceIds?: boolean
 }
 
 /**
@@ -88,123 +92,8 @@ function SpaceDividerLine({
 }
 
 /**
- * Biome decoration element (tree, rock, wave, grass)
- */
-function BiomeDecoration({
-  quadrant,
-  position,
-  scale = 1,
-}: {
-  quadrant: string
-  position: [number, number, number]
-  scale?: number
-}) {
-  const decorationRef = useRef<THREE.Group>(null)
-
-  // Different decorations based on biome
-  if (quadrant === 'Forests') {
-    // Simple tree shape (cone + cylinder)
-    return (
-      <group ref={decorationRef} position={position} scale={scale * 0.15}>
-        {/* Tree trunk */}
-        <mesh position={[0, 0.15, 0]} castShadow>
-          <cylinderGeometry args={[0.08, 0.12, 0.3, 6]} />
-          <meshStandardMaterial color="#5c4033" roughness={0.9} />
-        </mesh>
-        {/* Tree foliage */}
-        <mesh position={[0, 0.45, 0]} castShadow>
-          <coneGeometry args={[0.25, 0.5, 6]} />
-          <meshStandardMaterial color="#0f5132" roughness={0.8} />
-        </mesh>
-        <mesh position={[0, 0.7, 0]} castShadow>
-          <coneGeometry args={[0.18, 0.35, 6]} />
-          <meshStandardMaterial color="#0d6b3f" roughness={0.8} />
-        </mesh>
-      </group>
-    )
-  }
-
-  if (quadrant === 'Mountains') {
-    // Simple mountain/rock shape
-    return (
-      <group ref={decorationRef} position={position} scale={scale * 0.12}>
-        {/* Rock/mountain peak */}
-        <mesh position={[0, 0.2, 0]} rotation={[0, Math.random() * Math.PI, 0]} castShadow>
-          <coneGeometry args={[0.3, 0.5, 5]} />
-          <meshStandardMaterial color="#4b5563" roughness={0.95} />
-        </mesh>
-        {/* Snow cap */}
-        <mesh position={[0, 0.4, 0]} castShadow>
-          <coneGeometry args={[0.15, 0.15, 5]} />
-          <meshStandardMaterial color="#e5e7eb" roughness={0.7} />
-        </mesh>
-      </group>
-    )
-  }
-
-  if (quadrant === 'Riverlands') {
-    // Wave/water indication
-    return (
-      <group ref={decorationRef} position={position} scale={scale * 0.2}>
-        {/* Water ripple */}
-        <mesh position={[0, 0.12, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[0.1, 0.15, 16]} />
-          <meshStandardMaterial
-            color="#93c5fd"
-            transparent
-            opacity={0.6}
-            roughness={0.2}
-            metalness={0.3}
-          />
-        </mesh>
-        <mesh position={[0, 0.13, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[0.2, 0.23, 16]} />
-          <meshStandardMaterial
-            color="#60a5fa"
-            transparent
-            opacity={0.4}
-            roughness={0.2}
-            metalness={0.3}
-          />
-        </mesh>
-      </group>
-    )
-  }
-
-  if (quadrant === 'Pastures') {
-    // Wheat stalks
-    return (
-      <group ref={decorationRef} position={position} scale={scale * 0.15}>
-        {/* Wheat stalks */}
-        {[0, 0.4, 0.8, 1.2, 1.6].map((rot, i) => (
-          <group key={i}>
-            {/* Stalk */}
-            <mesh
-              position={[Math.cos(rot * Math.PI) * 0.05, 0.12, Math.sin(rot * Math.PI) * 0.05]}
-              rotation={[0.15, rot * Math.PI, 0]}
-            >
-              <boxGeometry args={[0.015, 0.18, 0.01]} />
-              <meshStandardMaterial color="#c9a227" roughness={0.9} />
-            </mesh>
-            {/* Wheat head */}
-            <mesh
-              position={[Math.cos(rot * Math.PI) * 0.05, 0.22, Math.sin(rot * Math.PI) * 0.05]}
-              rotation={[0.15, rot * Math.PI, 0]}
-            >
-              <cylinderGeometry args={[0.015, 0.01, 0.06, 6]} />
-              <meshStandardMaterial color="#daa520" roughness={0.8} />
-            </mesh>
-          </group>
-        ))}
-      </group>
-    )
-  }
-
-  return null
-}
-
-/**
- * Single space segment on a ring with biome decorations
+ * Single space segment on a ring
+ * Biome artwork will be part of the space texture - only special tokens (honey) are 3D pieces
  */
 function RingSpace({
   space,
@@ -214,6 +103,8 @@ function RingSpace({
   startAngle,
   endAngle,
   height = 0.15,
+  showSpaceId = false,
+  cavePlayerColor,
 }: {
   space: GameSpace
   ringIndex: number
@@ -222,10 +113,18 @@ function RingSpace({
   startAngle: number
   endAngle: number
   height?: number
+  showSpaceId?: boolean
+  cavePlayerColor?: string // If set, this space has a cave with this player's color
 }) {
   const meshRef = useRef<THREE.Mesh>(null)
 
   // Create the sector geometry
+  // COORDINATE SYSTEM NOTE (DO NOT CHANGE):
+  // - The shape uses y = -sin(angle) to flip the geometry visually
+  // - After rotation by -PI/2, shape's Y becomes world Z
+  // - Items (honey, caves, labels) use POSITIVE sin: centerZ = sin(angle)
+  // - This mismatch is intentional: geometry flip + item position = correct visual alignment
+  // - If you change this, the board colors will be correct but items will appear on wrong spaces
   const geometry = useMemo(() => {
     const shape = new THREE.Shape()
     const segments = 8
@@ -234,7 +133,7 @@ function RingSpace({
     for (let i = 0; i <= segments; i++) {
       const angle = startAngle + (endAngle - startAngle) * (i / segments)
       const x = Math.cos(angle) * innerRadius
-      const y = Math.sin(angle) * innerRadius
+      const y = -Math.sin(angle) * innerRadius  // Negate Y to flip North/South
       if (i === 0) {
         shape.moveTo(x, y)
       } else {
@@ -246,7 +145,7 @@ function RingSpace({
     for (let i = segments; i >= 0; i--) {
       const angle = startAngle + (endAngle - startAngle) * (i / segments)
       const x = Math.cos(angle) * outerRadius
-      const y = Math.sin(angle) * outerRadius
+      const y = -Math.sin(angle) * outerRadius  // Negate Y to flip North/South
       shape.lineTo(x, y)
     }
 
@@ -263,23 +162,28 @@ function RingSpace({
 
   const baseColor = QUADRANT_COLORS[space.quadrant] || '#888888'
 
-  // Highlight honey spaces
+  // Check if space has honey (only exists in forests)
   const isHoney = space.hasHoney
-  const emissiveColor = isHoney ? '#fbbf24' : '#000000'
-  const emissiveIntensity = isHoney ? 0.4 : 0
 
-  // Calculate center position for decoration
+  // Calculate center position for items (honey, caves, labels)
+  // DO NOT NEGATE centerZ - see coordinate system note above
   const centerAngle = (startAngle + endAngle) / 2
   const centerRadius = (innerRadius + outerRadius) / 2
-  const decorationPos: [number, number, number] = [
-    Math.cos(centerAngle) * centerRadius,
-    height + 0.02,
-    Math.sin(centerAngle) * centerRadius,
-  ]
+  const centerX = Math.cos(centerAngle) * centerRadius
+  const centerZ = Math.sin(centerAngle) * centerRadius  // MUST be positive sin
 
-  // Determine if this space should have a decoration (not all spaces)
-  // Use space position to create a pseudo-random but consistent pattern
-  const hasDecoration = (space.position % 3 === 0) && !space.piece
+  const itemPos: [number, number, number] = [centerX, height + 0.02, centerZ]
+
+  // Calculate cave position at the outer-right corner of the space
+  // Offset toward outer edge and toward the right edge angle
+  const caveAngle = endAngle - (endAngle - startAngle) * 0.15 // Near right edge
+  const caveRadius = outerRadius - (outerRadius - innerRadius) * 0.25 // Near outer edge
+  const caveX = Math.cos(caveAngle) * caveRadius
+  const caveZ = Math.sin(caveAngle) * caveRadius
+  const cavePos: [number, number, number] = [caveX, height + 0.02, caveZ]
+
+  // Calculate rotation for cave to face outward from center
+  const caveRotation = -caveAngle + Math.PI // Face away from center
 
   return (
     <group>
@@ -295,35 +199,60 @@ function RingSpace({
           color={baseColor}
           roughness={0.75}
           metalness={0.05}
-          emissive={emissiveColor}
-          emissiveIntensity={emissiveIntensity}
         />
       </mesh>
 
-      {/* Honey indicator */}
+      {/* Honey jug on spaces with honey */}
       {isHoney && (
-        <mesh
-          position={[decorationPos[0], height + 0.05, decorationPos[2]]}
-          rotation={[-Math.PI / 2, 0, 0]}
-        >
-          <circleGeometry args={[0.08, 6]} />
-          <meshStandardMaterial
-            color="#f59e0b"
-            emissive="#fbbf24"
-            emissiveIntensity={0.5}
-            roughness={0.3}
-            metalness={0.2}
-          />
-        </mesh>
+        <HoneyJug3D
+          position={itemPos}
+          scale={1.4 + (ringIndex * 0.1)}
+        />
       )}
 
-      {/* Biome decoration */}
-      {hasDecoration && !isHoney && (
-        <BiomeDecoration
-          quadrant={space.quadrant}
-          position={decorationPos}
-          scale={0.8 + (ringIndex * 0.1)}
-        />
+      {/* Cave entrance on mountain spaces with caves - positioned at outer-right corner */}
+      {cavePlayerColor && (
+        <>
+          <Cave3D
+            position={cavePos}
+            rotation={caveRotation}
+            scale={1.0 + (ringIndex * 0.1)}
+            playerColor={cavePlayerColor}
+          />
+          {/* Bear at the center of the space (next to their cave) */}
+          <Bear3D
+            piece={{
+              id: `bear-cave-${cavePlayerColor}`,
+              playerId: cavePlayerColor, // Will be matched by color
+              spaceId: space.id,
+              type: 'bear',
+              energy: 10,
+              fat: 0,
+              emergencyEnergy: 0,
+              bearTurn: 0,
+              resources: { grains: 0, berries: 0, salmon: 0, honey: 0, bearMeat: 0 },
+              isHibernating: false,
+            }}
+            players={[{ id: cavePlayerColor, name: '', color: cavePlayerColor, pieces: [], resources: { grains: 0, berries: 0, salmon: 0, honey: 0, bearMeat: 0 } }]}
+            position={[centerX, height + 0.12, centerZ]}
+          />
+        </>
+      )}
+
+      {/* Space ID label */}
+      {showSpaceId && (
+        <Text
+          position={[centerX, height + 0.05, centerZ]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          fontSize={0.12}
+          color="#ffffff"
+          anchorX="center"
+          anchorY="middle"
+          outlineWidth={0.01}
+          outlineColor="#000000"
+        >
+          {space.id}
+        </Text>
       )}
     </group>
   )
@@ -337,11 +266,15 @@ function Ring3D({
   spaces,
   rotation,
   players,
+  showSpaceIds = false,
+  caveAssignments = {},
 }: {
   ringConfig: typeof RING_CONFIGS[0]
   spaces: GameSpace[]
   rotation: number
   players: Player[]
+  showSpaceIds?: boolean
+  caveAssignments?: { [spaceId: string]: string } // spaceId -> playerColor
 }) {
   const groupRef = useRef<THREE.Group>(null)
   const [currentRotation, setCurrentRotation] = useState(0)
@@ -372,11 +305,11 @@ function Ring3D({
 
   return (
     <group ref={groupRef} rotation={[0, currentRotation, 0]}>
-      {sortedSpaces.map((space, index) => {
-        // Offset by 3π/4 to match the 2D board orientation
-        // Spaces start exactly at quadrant boundaries (no half-space offset)
-        const startAngle = (index * anglePerSpace) + (3 * Math.PI / 4)
-        const endAngle = startAngle + anglePerSpace
+      {sortedSpaces.map((space) => {
+        // Use the space's stored angles from game engine (already has correct 3π/4 offset)
+        // This ensures 3D board matches 2D board exactly
+        const startAngle = space.edgeAngles?.left ?? (space.centerAngle - anglePerSpace / 2)
+        const endAngle = space.edgeAngles?.right ?? (space.centerAngle + anglePerSpace / 2)
 
         const ringHeight = 0.1 + ringConfig.ring * 0.02
         return (
@@ -389,6 +322,8 @@ function Ring3D({
               startAngle={startAngle}
               endAngle={endAngle}
               height={ringHeight}
+              showSpaceId={showSpaceIds}
+              cavePlayerColor={caveAssignments[space.id]}
             />
             {/* Thin black line to divide spaces */}
             <SpaceDividerLine
@@ -403,7 +338,7 @@ function Ring3D({
                 piece={space.piece}
                 players={players}
                 position={calculateSpacePosition(
-                  startAngle + anglePerSpace / 2,
+                  space.centerAngle,
                   (ringConfig.innerRadius + ringConfig.outerRadius) / 2,
                   0.12 + ringConfig.ring * 0.02
                 )}
@@ -441,10 +376,11 @@ function CrossingBridges({ bridges, players }: { bridges: { [key: string]: GameS
 
   return (
     <group>
-      {/* Two crossing bridges - one N-S, one E-W (rotated to align with biome centers) */}
+      {/* Two crossing bridges - one connects Pastures-Riverlands, one connects Mountains-Forests */}
       {[0, 1].map((i) => {
-        // Rotate 45° from quadrant boundaries to align with biome centers
-        const angle = (i * Math.PI / 2) + Math.PI  // 180° and 270° (through biome centers)
+        // Use same 3π/4 offset as game engine
+        // Biome centers: Pastures at π (West), Mountains at 3π/2 (North), Riverlands at 0 (East), Forests at π/2 (South)
+        const angle = (i * Math.PI / 2) + Math.PI  // Through biome centers with 3π/4 base
 
         return (
           <group key={i}>
@@ -508,6 +444,7 @@ function CrossingBridges({ bridges, players }: { bridges: { [key: string]: GameS
 
       {/* Bridge connection points to ring 1 (4 directions aligned with biome centers) */}
       {['NORTH', 'EAST', 'SOUTH', 'WEST'].map((direction, index) => {
+        // Bridge entry points at biome centers - use same offset as game engine (3π/4)
         const angle = (index * Math.PI / 2) + Math.PI // Aligned with biome centers
         const connectionRadius = ring1Inner - 0.05
 
@@ -706,7 +643,7 @@ function CenterArea({
 /**
  * Main Board3D component
  */
-export function Board3D({ board, players, rotations, showArena = false }: Board3DProps) {
+export function Board3D({ board, players, rotations, showArena = false, showSpaceIds = false }: Board3DProps) {
   const boardRef = useRef<THREE.Group>(null)
 
   // Organize spaces by ring
@@ -720,6 +657,69 @@ export function Board3D({ board, players, rotations, showArena = false }: Board3
     })
     return result
   }, [board.spaces])
+
+  // Generate cave assignments - one random mountain space per player
+  // RULE: No two caves can be on the same ring (each player gets a different ring)
+  // Uses a seeded random based on player IDs for consistency across renders
+  // Bears are rendered inside RingSpace next to their caves so they rotate with the board
+  const caveAssignments = useMemo(() => {
+    const assignments: { [spaceId: string]: string } = {}
+
+    if (players.length === 0) return assignments
+
+    // Get all mountain spaces grouped by ring
+    const mountainSpaces = Object.values(board.spaces).filter(
+      space => space.quadrant === 'Mountains'
+    )
+
+    if (mountainSpaces.length === 0) return assignments
+
+    // Group mountain spaces by ring
+    const spacesByRing: { [ring: number]: typeof mountainSpaces } = {}
+    mountainSpaces.forEach(space => {
+      if (!spacesByRing[space.ring]) {
+        spacesByRing[space.ring] = []
+      }
+      spacesByRing[space.ring].push(space)
+    })
+
+    // Get available rings (1-5)
+    const availableRings = Object.keys(spacesByRing).map(Number).sort((a, b) => a - b)
+
+    // Create a simple seeded random based on player IDs for consistency
+    const seed = players.map(p => p.id).join('').split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
+    const seededRandom = (index: number) => {
+      const x = Math.sin(seed + index * 9999) * 10000
+      return x - Math.floor(x)
+    }
+
+    // Shuffle rings deterministically
+    const shuffledRings = [...availableRings].sort((a, b) => {
+      return seededRandom(a + seed) - seededRandom(b + seed)
+    })
+
+    // Assign one cave per player, each on a different ring
+    players.forEach((player, playerIndex) => {
+      if (playerIndex < shuffledRings.length) {
+        const ring = shuffledRings[playerIndex]
+        const ringSpaces = spacesByRing[ring]
+
+        // Pick a random space within this ring
+        const shuffledSpaces = [...ringSpaces].sort((a, b) => {
+          const hashA = a.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), seed + playerIndex)
+          const hashB = b.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), seed + playerIndex)
+          return seededRandom(hashA) - seededRandom(hashB)
+        })
+
+        if (shuffledSpaces.length > 0) {
+          const spaceId = shuffledSpaces[0].id
+          assignments[spaceId] = player.color
+        }
+      }
+    })
+
+    return assignments
+  }, [board.spaces, players])
 
   return (
     <group ref={boardRef}>
@@ -737,6 +737,8 @@ export function Board3D({ board, players, rotations, showArena = false }: Board3
           spaces={spacesByRing[ringConfig.ring] || []}
           rotation={rotations[index] || 0}
           players={players}
+          showSpaceIds={showSpaceIds}
+          caveAssignments={caveAssignments}
         />
       ))}
 
