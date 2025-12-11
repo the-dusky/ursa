@@ -83,14 +83,18 @@ export class BoardFactory {
           console.log(`  Example: Position 1 was ${config.biomes[0]}, now ${finalQuadrant}`)
         }
         
-        // Calculate angle for this position (visual position stays fixed, only biomes rotate)
-        const baseAngle = ((position - 0.5) / spaceCount) * 2 * Math.PI + 3*Math.PI/4
-        const angle = baseAngle
-        
-        // Calculate corner angles for this space (sector/trapezoid)
+        // Calculate angle for this position
+        // Counter-clockwise direction: negate position-based angle
+        // Offset 5π/4 (225°) so that R1-18 is at North (270°), R1-8 at South (90°)
+        // Biomes: Pastures (W, R1-1 to R1-5) → Forests (S, R1-6 to R1-10) → Riverlands (E, R1-11 to R1-15) → Mountains (N, R1-16 to R1-20)
         const anglePerSpace = (2 * Math.PI) / spaceCount
-        const leftAngle = angle - anglePerSpace / 2
-        const rightAngle = angle + anglePerSpace / 2
+        const baseAngle = -((position - 0.5) / spaceCount) * 2 * Math.PI + (5 * Math.PI / 4)
+        const angle = baseAngle
+
+        // Calculate corner angles for this space (sector/trapezoid)
+        // For counter-clockwise, "left" is the higher angle, "right" is lower
+        const leftAngle = angle + anglePerSpace / 2
+        const rightAngle = angle - anglePerSpace / 2
         
         const spaceId = `R${ring}-${position}`
         

@@ -76,7 +76,8 @@ function createInitialBoard(customRotations?: number[]) {
       { ring: 4, spaceCount: 32, radius: 300 },  // 8 spaces per quadrant
       { ring: 5, spaceCount: 36, radius: 360 }   // 9 spaces per quadrant
     ],
-    biomes: ['Riverlands', 'Mountains', 'Pastures', 'Forests'] as QuadrantType[],
+    // Counter-clockwise from West: Pastures (W) → Forests (S) → Riverlands (E) → Mountains (N)
+    biomes: ['Pastures', 'Forests', 'Riverlands', 'Mountains'] as QuadrantType[],
     bridgeSystem: {
       enabled: true,
       tunnelMode: true // East-West tunnel, North-South overland
