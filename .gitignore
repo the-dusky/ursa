@@ -46,3 +46,9 @@ next-env.d.ts
 
 old_reference
 .claude/settings.local.json
+
+# Y.js LevelDB database (runtime state)
+data/yjs-db/
+
+# Playwright MCP cache
+.playwright-mcp/
